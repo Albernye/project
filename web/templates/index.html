@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Location</title>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</head>
+<body>
+    <h1>You are in room: {{ room }}</h1>
+    <button onclick="collectSensorData()">Collect Sensor Data</button>
+</body>
+</html>

@@ -7,7 +7,7 @@ if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 
 # Base URL to encode in the QR Code (adapt according to your project)
-base_url = "http://localhost:5000/location?room="
+base_url = "https://98e7-84-79-64-75.ngrok-free.app/location?room="
 
 # Generation of QR codes for offices 201 to 225
 for room_number in range(201, 226):

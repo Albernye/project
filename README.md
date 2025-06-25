@@ -20,8 +20,33 @@ At this first stage, we focus on:
 ## 📁 Project Structure
 
 project/
-->data/ # Collected sensor and location data
-->qrcode/ # Folder containing generated QR codes
-->scripts/ # Python scripts (QR generation, email sending)
-->web/ # Webpage that opens after scanning a QR code
-->README.md # This file
+│
+├── qrcodes/
+│   ├── room_201.png
+│   ├── room_202.png
+│   ├── ...
+│   └── room_225.png
+│
+├── qr_generator/
+│   └── generate_qr.py
+│
+├── web/
+│   ├── app.py
+│   ├── templates/
+│   │   └── index.html
+│   └── static/
+│       └── script.js
+│
+├── scripts/
+│   ├── send_email.py
+│   └── collect_sensor_data.py
+│
+├── data/
+│   └── sensor_data.json
+│
+├── main.py
+├── .gitignore
+├── README.md
+└── requirements.txt
+
+
