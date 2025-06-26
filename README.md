@@ -47,6 +47,8 @@ project/
 ├── main.py
 ├── .gitignore
 ├── README.md
-└── requirements.txt
+├── requirements.txt
+├── config.py
+└── .env
 
 

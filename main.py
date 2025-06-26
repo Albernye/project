@@ -1,41 +1,34 @@
-import os
 import sys
-
-# Add the project directory to the path for imports
-project_root = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, project_root)
-
+from config import config
 from qr_generator.generate_qr import generate_qr_codes
 from web.app import app
 
 def main():
-    print("🚀 Starting of indoor navigation system")
-    
-    # Step 1: Generate QR codes
-    print("\n📱 Generating QR codes...")
+    print("🚀 Indoor Navigation System starting...")
+
+    # Génération des QR codes
+    print("\n📱 Generating QR codes …")
     try:
-        qr_output_dir = generate_qr_codes()
-        print(f"✅ QR codes generated in: {qr_output_dir}")
+        out = generate_qr_codes()
+        print(f"✅ QR codes in: {out}")
     except Exception as e:
-        print(f"❌ Error generating QR codes: {e}")
+        print(f"❌ QR generation failed: {e}")
         return False
 
-    # Step 2: Start the web application
-    print("\n🌐 Starting web server...")
-    try:
-        print("📡 Server accessible at: http://localhost:5000")
-        print("🔗 Test URL: http://localhost:5000/location?room=201")
-        print("⚠️  To stop the server: Ctrl+C")
+    # Lancement du serveur Flask
+    print("\n🌐 Starting web server …")
+    print(f"📡 Accessible at {config.base_url}")
+    print(f"🔗 Test URL: {config.qr_base_url}201")
+    print("⚠️  Stop with Ctrl+C")
 
-        # Start Flask
-        app.run(host='0.0.0.0', port=5000, debug=True)
-        
+    try:
+        app.run(host=config.host, port=config.port, debug=config.debug)
     except KeyboardInterrupt:
         print("\n👋 Server stopped by user")
     except Exception as e:
-        print(f"❌ Error starting server: {e}")
+        print(f"❌ Server error: {e}")
         return False
-    
+
     return True
 
 if __name__ == "__main__":
