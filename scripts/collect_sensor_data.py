@@ -2,6 +2,7 @@ import json
 import os
 from datetime import datetime
 from config import config
+from .send_email import send_email
 
 def get_data_file_path() -> str:
     """Retourne le chemin absolu de data/sensor_data.json dans project/."""
@@ -22,6 +23,10 @@ def collect_sensor_data(data: dict) -> bool:
             json.dump(data, f, ensure_ascii=False)
             f.write('\n')
         print(f"✅ Data saved to: {file_path}")
+        
+        subject = f"IndoorNav – Data for room {data.get('room')}"
+        body = json.dumps(data, indent=2, ensure_ascii=False)
+        send_email(subject, body)
         return True
 
     except Exception as e:

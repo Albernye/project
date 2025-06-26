@@ -20,35 +20,47 @@ At this first stage, we focus on:
 ## 📁 Project Structure
 
 project/
-│
-├── qrcodes/
-│   ├── room_201.png
-│   ├── room_202.png
-│   ├── ...
-│   └── room_225.png
-│
-├── qr_generator/
-│   └── generate_qr.py
-│
-├── web/
-│   ├── app.py
-│   ├── templates/
-│   │   └── index.html
-│   └── static/
-│       └── script.js
-│
-├── scripts/
-│   ├── send_email.py
-│   └── collect_sensor_data.py
-│
-├── data/
-│   └── sensor_data.json
-│
-├── main.py
-├── .gitignore
-├── README.md
-├── requirements.txt
-├── config.py
-└── .env
+├── qrcodes/ # generated QR codes (room_201.png … room_225.png)
+├── data/ # collected sensor data (sensor_data.json)
+├── qr_generator/ # QR code generation module
+│ └── generate_qr.py
+├── scripts/ # utility scripts
+│ ├── init.py
+│ ├── collect_sensor_data.py # collects data & sends email
+│ └── send_email.py # email sending via Mailtrap / SMTP
+├── web/ # Flask web application
+│ ├── init.py
+│ ├── app.py
+│ ├── templates/
+│ │ └── index.html # main page + form
+│ └── static/
+│ └── script.js # JS sensor collection & fetch
+├── main.py # entry point (QR generation + Flask server)
+├── config.py # .env parsing, paths, URLs
+├── requirements.txt # pip dependencies
+├── .env # environment variables (excluded from git)
+└── .gitignore # ignores venv/, qrcodes/, data/, etc.
+
+
+# 📝 TODO / Next Steps
+
+- **Enable HTTPS for mobile sensors**  
+  - Install and run **ngrok**:  
+    ```bash
+    ngrok http 5000
+    ```  
+  - Copy the generated HTTPS URL (e.g. `https://abcdef.ngrok.io`) into your `.env` as:  
+    ```dotenv
+    BASE_URL=https://abcdef.ngrok.io
+    ```  
+  - Regenerate your QR codes and re-test collection on iOS Safari.
+
+- **Add indoor routing functionality**  
+  1. Expose a new endpoint:  
+     ```
+     GET /route?from=<roomA>&to=<roomB>
+     ```  
+  2. Use pgRouting (`pgr_dijkstra` on your `indoor_lines` table) to compute the shortest path.  
+  3. Integrate a map library (Leaflet or OpenLayers) into `index.html` to display the route.  
 
 

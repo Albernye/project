@@ -1,12 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Location</title>
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <meta charset="UTF-8">
+  <title>Indoor Navigation – Room {{ room }}</title>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    h1 { margin-bottom: .5rem; }
+    button { padding: .5rem 1rem; font-size: 1rem; }
+    #status { margin-top: 1rem; color: #555; }
+  </style>
 </head>
 <body>
-    <h1>You are in room: {{ room }}</h1>
-    <button onclick="collectSensorData()">Collect Sensor Data</button>
+  <h1>🏷️ You are in room {{ room }}</h1>
+  <p>Select your destination:</p>
+  <select id="dest-select">
+    {% for dest in range(201, 226) %}
+      {% if dest != room|int %}
+        <option value="{{ dest }}">Room {{ dest }}</option>
+      {% endif %}
+    {% endfor %}
+  </select>
+  <button onclick="collectSensorData()">📡 Send my location & sensors</button>
+
+  <div id="status"></div>
 </body>
 </html>
