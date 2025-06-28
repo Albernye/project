@@ -11,22 +11,39 @@ def get_data_file_path() -> str:
     return os.path.join(data_dir, 'sensor_data.json')
 
 def collect_sensor_data(data: dict) -> bool:
-    """
-    Sauvegarde les données de capteurs en JSONL dans data/sensor_data.json
-    """
     try:
-        if 'timestamp' not in data:
-            data['timestamp'] = datetime.now().isoformat()
+        # Ensure timestamp & client_ip
+        data.setdefault('timestamp', datetime.now().isoformat())
+        data.setdefault('client_ip', None)
 
         file_path = get_data_file_path()
-        with open(file_path, 'a', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False)
-            f.write('\n')
-        print(f"✅ Data saved to: {file_path}")
-        
+
+        # Load existing array, or start fresh if file missing/empty/invalid
+        all_data = []
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    all_data = json.load(f)
+                    if not isinstance(all_data, list):
+                        raise ValueError("File does not contain a JSON array")
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"⚠️ Warning: could not parse existing JSON, starting new array ({e})")
+                all_data = []
+
+        # Append new record
+        all_data.append(data)
+
+        # Write back full JSON array
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(all_data, f, ensure_ascii=False, indent=2)
+
+        print(f"✅ Data saved as JSON array to: {file_path}")
+
+        # Send email
         subject = f"IndoorNav – Data for room {data.get('room')}"
-        body = json.dumps(data, indent=2, ensure_ascii=False)
+        body    = json.dumps(data, indent=2, ensure_ascii=False)
         send_email(subject, body)
+
         return True
 
     except Exception as e:
