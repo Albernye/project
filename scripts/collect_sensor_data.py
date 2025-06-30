@@ -1,5 +1,6 @@
 import json
 import os
+import numpy as np
 from datetime import datetime
 from config import config
 from .send_email import send_email
@@ -10,44 +11,56 @@ def get_data_file_path() -> str:
     os.makedirs(data_dir, exist_ok=True)
     return os.path.join(data_dir, 'sensor_data.json')
 
-def collect_sensor_data(data: dict) -> bool:
+def aggregate_axis(data_list, axes):
+    agg = {}
+    for axis in axes:
+        values = [d.get(axis, 0) for d in data_list if isinstance(d, dict)]
+        agg[f'mean_{axis}'] = float(np.mean(values)) if values else 0.0
+        agg[f'std_{axis}'] = float(np.std(values)) if values else 0.0
+    return agg
+
+def collect_sensor_data(data):
     try:
-        # Ensure timestamp & client_ip
-        data.setdefault('timestamp', datetime.now().isoformat())
-        data.setdefault('client_ip', None)
+        # Récupérer et agréger les capteurs
+        aggregated_data = {
+            "room": data.get("room"),
+            "timestamp": datetime.utcnow().isoformat(),
+            "client_ip": data.get("client_ip"),
+        }
 
-        file_path = get_data_file_path()
+        if "accelerometer" in data:
+            aggregated_data["accelerometer"] = aggregate_axis(data["accelerometer"], ['x', 'y', 'z'])
 
-        # Load existing array, or start fresh if file missing/empty/invalid
-        all_data = []
-        if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    all_data = json.load(f)
-                    if not isinstance(all_data, list):
-                        raise ValueError("File does not contain a JSON array")
-            except (json.JSONDecodeError, ValueError) as e:
-                print(f"⚠️ Warning: could not parse existing JSON, starting new array ({e})")
-                all_data = []
+        if "gyroscope" in data:
+            aggregated_data["gyroscope"] = aggregate_axis(data["gyroscope"], ['alpha', 'beta', 'gamma'])
 
-        # Append new record
-        all_data.append(data)
+        if "magnetometer" in data:
+            aggregated_data["magnetometer"] = aggregate_axis(data["magnetometer"], ['x', 'y', 'z'])
 
-        # Write back full JSON array
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(all_data, f, ensure_ascii=False, indent=2)
+        if "barometer" in data:
+            aggregated_data["barometer"] = aggregate_axis(data["barometer"], ['pressure'])
 
-        print(f"✅ Data saved as JSON array to: {file_path}")
+        if "wifi" in data:
+            # Option simple : conserver tel quel
+            aggregated_data["wifi"] = data["wifi"]
 
-        # Send email
-        subject = f"IndoorNav – Data for room {data.get('room')}"
-        body    = json.dumps(data, indent=2, ensure_ascii=False)
-        send_email(subject, body)
+        if "gps" in data:
+            aggregated_data["gps"] = data["gps"]
+
+        # Chemin du fichier
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        data_dir = os.path.join(project_root, 'data')
+        os.makedirs(data_dir, exist_ok=True)
+        file_path = os.path.join(data_dir, 'sensor_data.json')
+
+        # Sauvegarde en JSONL
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(aggregated_data) + '\n')
 
         return True
 
     except Exception as e:
-        print(f"❌ Error during saving: {e}")
+        print(f"❌ Failed to collect sensor data: {e}")
         return False
 
 def read_sensor_data() -> list:
