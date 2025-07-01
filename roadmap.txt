@@ -1,0 +1,28 @@
+| Phase                           | Tâches clés                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **A. Mobile & collecte native** | • Développer une app React Native ou Flutter pour capter Wi‑Fi, BLE, baro, magnéto, gyro, accél. |
+|                                 | • Envoyer en HTTPS vers `/collect_sensor_data`                                                   |
+| **B. Routage dynamique**        | • Créer endpoint `/route?from=XXX&to=YYY` dans Flask                                             |
+|                                 | • Utiliser `pgr_dijkstra` et renvoyer GeoJSON à l’app                                            |
+| **C. Tracking utilisateur**     | • Intégrer PDR en temps réel dans l’app (magnéto+accéléro)                                       |
+|                                 | • Afficher la position en surimpression sur la carte (Leaflet/OpenLayers)                        |
+| **D. Fusion & correction**      | • À chaque dérive > 2 m, déclencher fingerprinting Wi‑Fi pour recalage                           |
+|                                 | • Proposer un scan QR pour confirmer la position                                                 |
+| **E. Déploiement**              | • Container Docker + CI/CD (GitHub Actions)                                                      |
+|                                 | • Hébergement de l’API (Heroku, Railway, VM universitaire)                                       |
+|                                 | • HTTPS & configuration DNS                                                                      |
+| **F. Monitoring & feedback**    | • Dashboard d’usage (nombre de scans, taux de localisation OK)                                   |
+|                                 | • Alerts si trop de dérive ou échecs fréquents                                                   |
+| **G. Documentation**            | • Rédiger un guide utilisateur pour l’app                                                        |
+
+Prochaines étapes immédiates
+
+    App native simplifiée : prototype React Native + Expo
+
+    Endpoint /route : vérifier que PGRouting renvoie le bon chemin
+
+    Intégration PDR offline : script Python pour simuler sur CSV
+
+    Fusion kNN & PDR : appeler fingerprint si éloigné de la route
+
+    UI mobile/web : afficher carte, position et itinéraire
