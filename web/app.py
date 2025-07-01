@@ -3,6 +3,7 @@ import json
 import os
 from scripts.collect_sensor_data import collect_sensor_data
 from scripts.geolocate import predict_room
+from scripts.route import route_between
 from datetime import datetime
 
 app = Flask(__name__)
@@ -112,6 +113,24 @@ def locate():
             "status": "error",
             "message": str(e)
         }), 500
+    
+@app.route('/route', methods=['GET'])
+def route():
+    """
+    GET /route?from=ID1&to=ID2
+    Retourne GeoJSON FeatureCollection.
+    """
+    try:
+        start = int(request.args.get('from', 0))
+        end   = int(request.args.get('to',   0))
+    except ValueError:
+        return jsonify({"status":"error","message":"Invalid node IDs"}), 400
+
+    try:
+        geojson = route_between(start, end)
+        return jsonify({"status":"success", "route": geojson})
+    except Exception as e:
+        return jsonify({"status":"error", "message": str(e)}), 500
 
 
 if __name__ == '__main__':

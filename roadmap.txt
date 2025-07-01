@@ -29,15 +29,15 @@ Prochaines étapes immédiates pour l'OS
 
     ------------------------------------------------------------------------------------------------
 
-    Tâches POC restantes
+Tâches POC restantes
 
     Tester en conditions réelles
 
         Scanner un QR dans le bâtiment test pour valider le passage /location.
 
-        Vérifier que l’URL fonctionne sur ton téléphone.
+        Vérifier que l’URL fonctionne sur ton téléphone. HAVE TO GO TO THE BUILDING
 
-    Structurer l’import des enregistrements
+    Structurer l’import des enregistrements ✅
 
         Plutôt que d’inscrire tout dans un seul sensor_data.json, créer un dossier data/raw/door_<room>/recording_<i>.json ou CSV.
 

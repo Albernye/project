@@ -2,27 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Indoor Navigation – Room {{ room }}</title>
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <title>Indoor Navigation</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    h1 { margin-bottom: .5rem; }
-    button { padding: .5rem 1rem; font-size: 1rem; }
-    #status { margin-top: 1rem; color: #555; }
+    body, html { margin:0; padding:0; height:100%; }
+    #map { height: 100%; width: 100%; }
+    .control-panel {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255,255,255,0.9);
+      padding: 10px;
+      border-radius: 8px;
+      z-index: 1000;
+    }
   </style>
 </head>
 <body>
-  <h1>🏷️ You are in room {{ room }}</h1>
-  <p>Select your destination:</p>
-  <select id="dest-select">
-    {% for dest in range(201, 226) %}
-      {% if dest != room|int %}
-        <option value="{{ dest }}">Room {{ dest }}</option>
-      {% endif %}
-    {% endfor %}
-  </select>
-  <button onclick="collectSensorData()">📡 Send my location & sensors</button>
+  <div class="control-panel">
+    <label for="destSelect">Destination:</label>
+    <select id="destSelect"></select>
+    <button id="goBtn">Go</button>
+  </div>
+  <div id="map"></div>
 
-  <div id="status"></div>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="/static/leaflet.js"></script>
 </body>
 </html>
