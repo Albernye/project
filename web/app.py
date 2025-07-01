@@ -1,7 +1,8 @@
 from flask import Flask, render_template, request, jsonify
 import json
 import os
-from scripts.collect_sensor_data import collect_sensor_data 
+from scripts.collect_sensor_data import collect_sensor_data
+from scripts.geolocate import predict_room
 from datetime import datetime
 
 app = Flask(__name__)
@@ -89,6 +90,29 @@ def view_data():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/locate', methods=['GET'])
+def locate():
+    try:
+        room, neighbors = predict_room()
+        return jsonify({
+            "status": "success",
+            "predicted_room": room,
+            "neighbors": neighbors
+        })
+    except RuntimeError as re:
+        # Missing live data → 400
+        return jsonify({
+            "status": "error",
+            "message": str(re)
+        }), 400
+    except Exception as e:
+        # Any other error → 500
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
 
 if __name__ == '__main__':
     print("🌐 Démarrage du serveur Flask…")
