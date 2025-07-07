@@ -18,8 +18,8 @@ def collect_sensor_data(data):
 
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-        # 1️⃣ Save raw in data/sensor_data_raw/recordings/door_<room>/
-        raw_dir = os.path.join(project_root, 'data', 'sensor_data_raw', 'recordings', f'door_{room}')
+        # 1️⃣ Save raw in data/recordings/door_<room>/
+        raw_dir = os.path.join(project_root, 'data','recordings', f'door_{room}')
         os.makedirs(raw_dir, exist_ok=True)
         raw_path = os.path.join(raw_dir, f'recording_{ts}.json')
         with open(raw_path, 'w', encoding='utf-8') as f:
