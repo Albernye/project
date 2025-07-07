@@ -1,134 +1,149 @@
 import pandas as pd
 import numpy as np
-import glob
+import json
 import warnings
 import math
 import csv
 import matplotlib.pyplot as plt
-from scipy.signal import butter
-import scipy.linalg
-from sklearn.neighbors import KNeighborsRegressor 
-from bisect import bisect_right
 from scipy.signal import butter, filtfilt
 from scipy.linalg import expm
+from sklearn.neighbors import KNeighborsRegressor
+from datetime import datetime
+import os
+from bisect import bisect_right
 
+# Suppress warnings
+warnings.filterwarnings('ignore')
 
 def find_most_recent_index(timestamps, reference_time):
-    # Find the position where reference_time would fit
+    """Find the most recent timestamp index for a given reference time"""
     pos = bisect_right(timestamps, reference_time)
-
-    # If pos is 0, it means no valid timestamp exists
     return pos - 1 if pos > 0 else None
 
-def euclidean_distance_3d(lon1, lat1, z1, lon2, lat2, z2):
-    """
-    Calculate the Euclidean distance between two points in 3D space
-    given their longitudes, latitudes in decimal degrees, and altitudes in meters.
+def latlon_to_xy(latitude, longitude, origin_latitude, origin_longitude):
+    """Convert latitude/longitude to local XY coordinates"""
+    R = 6371000  # Earth radius in meters
+    
+    lat_rad = math.radians(latitude)
+    lon_rad = math.radians(longitude)
+    origin_lat_rad = math.radians(origin_latitude)
+    origin_lon_rad = math.radians(origin_longitude)
+    
+    delta_lon = lon_rad - origin_lon_rad
+    delta_lat = lat_rad - origin_lat_rad
+    
+    x = delta_lon * math.cos(origin_lat_rad) * R
+    y = delta_lat * R
+    
+    return x, y
 
-    Returns the distance in meters.
-    """
-    # Convert decimal degrees to radians
-    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
-    
-    # Earth radius in meters
-    radius_earth = 6371000
-    
-    # Convert spherical coordinates to Cartesian coordinates
-    x1 = radius_earth * math.cos(lat1) * math.cos(lon1)
-    y1 = radius_earth * math.cos(lat1) * math.sin(lon1)
-    z1 = z1  # altitude in meters
-    
-    x2 = radius_earth * math.cos(lat2) * math.cos(lon2)
-    y2 = radius_earth * math.cos(lat2) * math.sin(lon2)
-    z2 = z2  # altitude in meters
-    
-    # Calculate Euclidean distance in 3D
-    distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-    
-    return distance
-
-
-def kalman_filter_predict1(xk_1, Pk_1, A, Q):
-    xk_pred = A @ xk_1 
-    Pk_pred = A @ Pk_1 @ A.T + Q
-    return xk_pred, Pk_pred
-
-def kalman_filter_predict2(xk_1, Pk_1, A, B, u, Q):
+def kalman_filter_predict(xk_1, Pk_1, A, B, u, Q):
+    """Kalman filter prediction step"""
     xk_pred = A @ xk_1 + B @ u
     Pk_pred = A @ Pk_1 @ A.T + Q
     return xk_pred, Pk_pred
 
 def kalman_filter_update(xk_pred, Pk_pred, zk, H, R):
-    Kk = Pk_pred @ H.T @ np.linalg.inv(H @ Pk_pred @ H.T + R)
-    xk = xk_pred + Kk @ (zk - H @ xk_pred)
+    """Kalman filter update step"""
+    innovation = zk - H @ xk_pred
+    S = H @ Pk_pred @ H.T + R
+    Kk = Pk_pred @ H.T @ np.linalg.inv(S)
+    xk = xk_pred + Kk @ innovation
     Pk = (np.eye(len(Pk_pred)) - Kk @ H) @ Pk_pred
     return xk, Pk
 
-def kalman_filter3d(stride_lengths, thetas, positions, q, r):
-    # State vector [x, y, theta]. Initial state assumed to be [0, 0, 0].
-    xk = np.array([0, 0, positions[0,0], 0])
-    Pk = np.eye(4)
+def kalman_filter_3d(stride_lengths, thetas, wifi_positions, q, r):
+    """
+    3D Kalman filter for sensor fusion
+    Args:
+        stride_lengths: Array of stride lengths from PDR
+        thetas: Array of heading angles from PDR
+        wifi_positions: Array of WiFi-based positions (x, y, z)
+        q: Process noise variance
+        r: Measurement noise variance
+    """
+    if len(stride_lengths) == 0 or len(wifi_positions) == 0:
+        return np.array([])
+    
+    # Initialize state [x, y, z, theta]
+    xk = np.array([0.0, 0.0, wifi_positions[0, 2], 0.0])
+    Pk = np.eye(4) * 1.0
     
     # State transition matrix
     A = np.eye(4)
     
-    # Measurement matrix
+    # Measurement matrix (observe x, y, z)
     H = np.array([
-    [1, 0, 0, 0],
-    [0, 1, 0, 0],
-    [0, 0, 1, 0]
+        [1, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0]
     ])
     
-    # Process noise covariance matrix
-    Q = np.eye(4)*q
+    # Process noise covariance
+    Q = np.eye(4) * q
     
-    # Measurement noise covariance matrix
-    R = np.eye(3)*r
+    # Measurement noise covariance
+    R = np.eye(3) * r
     
     estimated_positions = []
-    for k in range(len(positions)):
-        # Control input
+    
+    for k in range(len(stride_lengths)):
+        # Control input (stride length and heading change)
         L = stride_lengths[k]
-        delta_theta = thetas[k]
+        theta_current = thetas[k] if k < len(thetas) else 0.0
+        
+        # Control matrix
         B = np.array([
-            [np.cos(xk[2]), 0],
-            [np.sin(xk[2]), 0],
+            [np.cos(xk[3]), 0],
+            [np.sin(xk[3]), 0],
             [0, 0],
             [0, 1]
         ])
-        u = np.array([L, delta_theta])
+        
+        # Control vector
+        u = np.array([L, theta_current - xk[3] if k > 0 else theta_current])
         
         # Prediction step
-        xk_pred, Pk_pred = kalman_filter_predict2(xk, Pk, A, B, u, Q)
+        xk_pred, Pk_pred = kalman_filter_predict(xk, Pk, A, B, u, Q)
         
-        # Update step
-        zk = positions[k]
-        xk, Pk = kalman_filter_update(xk_pred, Pk_pred, zk, H, R)
+        # Update step with WiFi measurement
+        if k < len(wifi_positions):
+            zk = wifi_positions[k]
+            xk, Pk = kalman_filter_update(xk_pred, Pk_pred, zk, H, R)
+        else:
+            xk, Pk = xk_pred, Pk_pred
+        
+        # Update heading in state
+        xk[3] = theta_current
         
         # Store estimated position
-        estimated_positions.append(xk[:3])
+        estimated_positions.append(xk[:3].copy())
     
-    estimated_positions = np.array(estimated_positions)
-    return estimated_positions
-
-from scipy.signal import butter, filtfilt
+    return np.array(estimated_positions)
 
 def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
-    fps=np.zeros((1,fp.shape[1]))
-    XX=[]
-    YY=[]
-    ZZ=[]
-    long=[]
-    lat=[]
+    """
+    Step detection based on accelerometer magnitude
+    """
+    if len(magnitude) == 0 or len(time) == 0:
+        return 0, [], np.array([])
+    
     # Calculate sample rate
     num_samples = len(magnitude)
     time_exp = time[-1] - time[0]
+    if time_exp <= 0:
+        return 0, [], np.array([])
+    
     freq_Acc = np.ceil(num_samples / time_exp)  # samples/s or Hz
     
     # Apply low-pass Butterworth filter
     order_filter = 4
     cutoff_freq = 2.0  # Hz
-    b, a = butter(order_filter, cutoff_freq / (freq_Acc / 2), btype='low')
+    nyquist = freq_Acc / 2
+    if cutoff_freq >= nyquist:
+        cutoff_freq = nyquist * 0.9
+    
+    b, a = butter(order_filter, cutoff_freq / nyquist, btype='low')
     Acc_mag_filt = filtfilt(b, a, magnitude)
     
     # Detect steps
@@ -139,14 +154,14 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
     Acc_filt_detrend = np.zeros(len(magnitude))
     
     for ii in range(1, len(magnitude)):
-        gravity = 0.999 * gravity + 0.001 * magnitude[ii]  # Experimental gravity calculation
+        gravity = 0.999 * gravity + 0.001 * magnitude[ii]
         Acc_filt_detrend[ii] = Acc_mag_filt[ii] - gravity
         
         if Acc_filt_detrend[ii] > threshold_acc and Acc_filt_detrend[ii] < threshold_acc_discard:
             Acc_filt_binary[ii] = 1  # Up phases of body (start step)
         else:
             if Acc_filt_detrend[ii] < -threshold_acc:
-                if Acc_filt_binary[ii-1] == 1:
+                if ii > 0 and Acc_filt_binary[ii-1] == 1:
                     Acc_filt_binary[ii] = 0
                 else:
                     Acc_filt_binary[ii] = -1  # Down phases of body (end step)
@@ -155,23 +170,17 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
 
     step_count = 0
     StanceBegins_idx = []
-    time_step= []
+    time_step = []
     StepDect = np.zeros(len(magnitude))
     steps = np.full(len(magnitude), np.nan)
     
     window = int(0.4 * freq_Acc)  # Samples in window to consider 0.4 seconds
     
     for ii in range(window + 2, len(magnitude)):
-        if (Acc_filt_binary[ii] == -1 and Acc_filt_binary[ii - 1] == 0 and np.sum(Acc_filt_binary[ii - window:ii - 2]) > 1):
+        if (Acc_filt_binary[ii] == -1 and Acc_filt_binary[ii - 1] == 0 and 
+            np.sum(Acc_filt_binary[ii - window:ii - 2]) > 1):
             StepDect[ii] = 1
             time_step.append(time[ii])
-            idx = find_most_recent_index(timeFP,time[ii])
-            fps=np.vstack((fps,fp[idx]))
-            long.append(longFP[idx][0])
-            lat.append(latFP[idx][0])
-            XX.append(POSI_X[ii][0])
-            YY.append(POSI_Y[ii][0])
-            ZZ.append(ZIMU[ii])
             step_count += 1
             StanceBegins_idx.append(ii)
             
@@ -180,13 +189,11 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
         else:
             steps[ii] = np.nan
     
-    
     # All support samples
     StancePhase = np.zeros(num_samples)
     for ii in StanceBegins_idx:
-        StancePhase[ii:ii + 10] = np.ones(10)  # Assume support phase is the 10 following samples after start of support phase (StanceBegins_idx)
-
-    Num_steps = len(StanceBegins_idx)  # Number of counted steps
+        end_idx = min(ii + 10, num_samples)
+        StancePhase[ii:end_idx] = 1
     
     # Plotting
     if plot:
@@ -196,107 +203,115 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
         plt.plot(time, Acc_filt_detrend, 'c-', label='detrend(lowpass(|Acc|))')
         plt.plot(time, Acc_filt_binary, 'gx-', label='Binary')
         plt.plot(time, steps, 'ro', markersize=8, label='Detected Steps')
-        plt.title('"SL+theta PDR": Accelerometer processing for Step detection')
-        plt.xlabel('time (seconds)')
-        plt.ylabel('Acceleration')
+        plt.title('Step Detection from Accelerometer')
+        plt.xlabel('Time (seconds)')
+        plt.ylabel('Acceleration (m/s²)')
         plt.legend()
+        plt.grid(True)
         plt.show()
     
-    #print(time_step)
-    fps=fps[1:,:]
-    
-    return Num_steps, StanceBegins_idx, StancePhase, fps, XX, YY, ZZ, long, lat
+    return step_count, StanceBegins_idx, StancePhase
 
-def latlon_to_xy(latitude, longitude, origin_latitude, origin_longitude):
+def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_phase, ver=True, idx_fig=1):
+    """
+    Weinberg algorithm for stride length and heading estimation
+    """
+    if len(step_event) == 0:
+        return np.array([]), np.array([]).reshape(0, 2), np.array([])
     
-    # Radius of the Earth in meters
-    R = 6371000
+    # Weinberg constant (to be calibrated for each person)
+    K = 0.4
     
-    # Convert degrees to radians
-    lat_rad = math.radians(latitude)
-    lon_rad = math.radians(longitude)
-    origin_lat_rad = math.radians(origin_latitude)
-    origin_lon_rad = math.radians(origin_longitude)
-    
-    # Calculate differences
-    delta_lon = lon_rad - origin_lon_rad
-    delta_lat = lat_rad - origin_lat_rad
-    
-    # Calculate x, y using the planar approximation
-    x = delta_lon * math.cos(origin_lat_rad) * R
-    y = delta_lat * R
-    
-    return x, y
-
-def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_phase, ver, idx_fig):
-    # Constants
-    K = 0.2  # Weinberg constant dependent on each person or walking mode
-
-    # Extracting data sizes and frequencies
-    time_exp=time[-1]-time[0]
-    print(time_exp)
+    # Calculate frequencies
+    time_exp = time[-1] - time[0]
+    if time_exp <= 0:
+        return np.array([]), np.array([]).reshape(0, 2), np.array([])
     
     num_samples_acc = acc.shape[0]
-    print(num_samples_acc)
     freq_acc = np.ceil(num_samples_acc / time_exp)
-    print(freq_acc)
-
+    
     num_samples_gyr = gyr.shape[0]
     freq_gyr = np.ceil(num_samples_gyr / time_exp)
     
+    print(f"Recording duration: {time_exp:.2f} seconds")
+    print(f"Accelerometer frequency: {freq_acc} Hz")
+    print(f"Gyroscope frequency: {freq_gyr} Hz")
     
-
-    # Step 1: Magnitude of accelerometer data
+    # Calculate accelerometer magnitude
     m_acc = np.sqrt(acc[:, 0]**2 + acc[:, 1]**2 + acc[:, 2]**2)
-
-    # Step 2: Low-pass filter
+    
+    # Apply low-pass filter
     cutoff_freq = 3  # Hz
-    b, a = butter(4, cutoff_freq / freq_acc, btype='low')
+    nyquist = freq_acc / 2
+    if cutoff_freq >= nyquist:
+        cutoff_freq = nyquist * 0.9
+    
+    b, a = butter(4, cutoff_freq / nyquist, btype='low')
     m_acc = filtfilt(b, a, m_acc)
-
-    # Step 3: Weiberg's algorithm for stride length estimation
+    
+    # Weinberg stride length estimation
     stride_lengths = []
     for i in range(len(step_event)):
         sample_step_event = step_event[i]
-        acc_max = np.max(m_acc[:sample_step_event])
-        acc_min = np.min(m_acc[:sample_step_event])
-        bounce = (acc_max - acc_min)**(1/4)
-        stride_length = bounce * K * 2
-        stride_lengths.append(stride_length)
-
-    # Step 4: Heading direction (Thetas) after each step
-    # Initialize rotation matrix at initial sample
-    w = np.arange(0, np.ceil(20 * freq_acc), dtype=int)  # Window for initial rest assumption
-    acc_mean = np.mean(acc[w, :], axis=0)
-    roll_ini = np.arctan2(acc_mean[1], acc_mean[2]) * 180 / np.pi
-    pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2)) * 180 / np.pi
-    yaw_ini = 0
+        if sample_step_event < len(m_acc):
+            # Calculate over a window around the detected step
+            window_start = max(0, sample_step_event - 20)
+            window_end = min(len(m_acc), sample_step_event + 20)
+            acc_max = np.max(m_acc[window_start:window_end])
+            acc_min = np.min(m_acc[window_start:window_end])
+            
+            if acc_max > acc_min:
+                bounce = (acc_max - acc_min)**(1/4)
+                stride_length = bounce * K
+                stride_lengths.append(max(stride_length, 0.3))  # Minimum stride length
+            else:
+                stride_lengths.append(0.7)  # Default stride length
+        else:
+            stride_lengths.append(0.7)
+    
+    # Initialize rotation matrix
+    w = np.arange(0, min(int(np.ceil(5 * freq_acc)), len(acc)), dtype=int)
+    if len(w) > 0:
+        acc_mean = np.mean(acc[w, :], axis=0)
+        roll_ini = np.arctan2(acc_mean[1], acc_mean[2])
+        pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2))
+        yaw_ini = 0
+    else:
+        roll_ini = pitch_ini = yaw_ini = 0
+    
     rot_gs = np.zeros((3, 3, num_samples_acc))
-    rot_z = np.array([[np.cos(yaw_ini*np.pi/180), -np.sin(yaw_ini*np.pi/180), 0],
-                      [np.sin(yaw_ini*np.pi/180), np.cos(yaw_ini*np.pi/180), 0],
+    
+    # Initial rotation matrix
+    rot_z = np.array([[np.cos(yaw_ini), -np.sin(yaw_ini), 0],
+                      [np.sin(yaw_ini), np.cos(yaw_ini), 0],
                       [0, 0, 1]])
-    rot_y = np.array([[np.cos(pitch_ini*np.pi/180), 0, np.sin(pitch_ini*np.pi/180)],
+    rot_y = np.array([[np.cos(pitch_ini), 0, np.sin(pitch_ini)],
                       [0, 1, 0],
-                      [-np.sin(pitch_ini*np.pi/180), 0, np.cos(pitch_ini*np.pi/180)]])
+                      [-np.sin(pitch_ini), 0, np.cos(pitch_ini)]])
     rot_x = np.array([[1, 0, 0],
-                      [0, np.cos(roll_ini*np.pi/180), -np.sin(roll_ini*np.pi/180)],
-                      [0, np.sin(roll_ini*np.pi/180), np.cos(roll_ini*np.pi/180)]])
-    rot_gs[:, :, 0] = np.dot(rot_z, np.dot(rot_y, rot_x))
-
-    # Propagate rotation matrix to all samples using gyroscope data
-    for i in range(1, num_samples_gyr):
+                      [0, np.cos(roll_ini), -np.sin(roll_ini)],
+                      [0, np.sin(roll_ini), np.cos(roll_ini)]])
+    
+    rot_gs[:, :, 0] = rot_z @ rot_y @ rot_x
+    
+    # Propagate rotation matrix using gyroscope data
+    for i in range(1, min(num_samples_gyr, num_samples_acc)):
         skew_gyros = np.array([[0, -gyr[i, 2], gyr[i, 1]],
                                [gyr[i, 2], 0, -gyr[i, 0]],
-                               [-gyr[i, 1], gyr[i, 0], 0]])  # Skew-symmetric matrix
-        rot_gs[:, :, i] = np.dot(rot_gs[:, :, i - 1], expm(skew_gyros / freq_gyr))  # Using matrix exponential
-
-    # Calculate heading direction (Thetas)
+                               [-gyr[i, 1], gyr[i, 0], 0]])
+        
+        if freq_gyr > 0:
+            rot_gs[:, :, i] = rot_gs[:, :, i - 1] @ expm(skew_gyros / freq_gyr)
+    
+    # Calculate heading directions
     thetas = np.zeros(len(step_event))
     step_event_gyro = np.floor(np.array(step_event) * freq_gyr / freq_acc).astype(int)
+    
     for k in range(len(step_event)):
-        thetas[k] = np.arctan2(rot_gs[1, 0, step_event_gyro[k]], rot_gs[0, 0, step_event_gyro[k]])
-
-    # Step 5: Positions after integration (PDR results)
+        gyro_idx = min(step_event_gyro[k], num_samples_acc - 1)
+        thetas[k] = np.arctan2(rot_gs[1, 0, gyro_idx], rot_gs[0, 0, gyro_idx])
+    
+    # Calculate positions using PDR
     positions = np.zeros((len(step_event), 2))
     for k in range(len(step_event)):
         if k == 0:
@@ -306,138 +321,275 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
             positions[k, 0] = positions[k - 1, 0] + stride_lengths[k] * np.cos(thetas[k])
             positions[k, 1] = positions[k - 1, 1] + stride_lengths[k] * np.sin(thetas[k])
     
-    positions = np.vstack((np.array([0, 0]), positions))  # Adding initial position (0,0)
-       
+    # Add initial position
+    positions = np.vstack((np.array([0, 0]), positions))
     
-    # Plotting (if ver is True)
+    # Plotting
     if ver:
-        #plt.figure(idx_fig)
-        #plt.plot(stride_lengths, 'bo-', label='StrideLengths (m)')
-        #plt.plot(thetas, 'rx-', label='Thetas (rad)')
-        #plt.legend()
-        #plt.title('StrideLengths and Thetas')
-        #plt.xlabel('Steps')
-        #plt.grid(True)
-        #idx_fig += 1
-
         plt.figure(idx_fig)
-        plt.plot(positions[:, 0], positions[:, 1], 'bo-', label='Positions')
-        plt.plot(positions[0, 0], positions[0, 1], 'ys', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.plot(positions[-1, 0], positions[-1, 1], 'yo', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.title('SL + Theta: Positions of trajectories in the global coordinate frame (G)')
+        plt.plot(positions[:, 0], positions[:, 1], 'bo-', label='PDR Positions')
+        plt.plot(positions[0, 0], positions[0, 1], 'gs', markersize=10, label='Start')
+        plt.plot(positions[-1, 0], positions[-1, 1], 'rs', markersize=10, label='End')
+        plt.title(f'PDR Trajectory - {len(step_event)} steps detected')
         plt.xlabel('East (m)')
         plt.ylabel('North (m)')
         plt.axis('equal')
         plt.grid(True)
-        idx_fig += 1
-
+        plt.legend()
         plt.show()
-
+    
     return thetas, positions, stride_lengths
 
-
-def KalmanFilter(IMUfile, FPfile, knntrainfile, q, r):
-    testIMU=pd.read_csv(IMUfile, delimiter=';')
-    testFP=pd.read_csv(FPfile, delimiter=';')
-
-    Acc_Magn_temp = testIMU[['MOD_ACCE']].values.tolist()
-    Gyr_Magn_temp = testIMU[['MOD_GYRO']].values.tolist()
-    ACCE=testIMU[['ACCE_X','ACCE_Y','ACCE_Z']].values
-    GYRO=testIMU[['GYRO_X','GYRO_Y','GYRO_X']].values
-    time_temp = testIMU[['time']].values.tolist()
-    POSI_X= testIMU[['POSI_X']].values.tolist()
-    POSI_Y= testIMU[['POSI_Y']].values.tolist()
-    longIMU=testIMU[['long']].values.tolist()
-    latIMU=testIMU[['lat']].values.tolist()
-    ZIMUt=testIMU[['Z']].values.tolist()
-
-
-    longFP = testFP[['long']].values.tolist()
-    latFP = testFP[['lat']].values.tolist()
-    ZtFP=testFP[['Z']].values.tolist()
-    timeFParr=testFP[['time']].values.tolist()
-    fp=testFP.drop(columns=['time','long', 'lat','Z']).values
-    timeFP=[]
-    ZFP=[]
-    for i in range(len(timeFParr)):
-        timeFP.append(timeFParr[i][0])
-        ZFP.append(ZtFP[i][0])
-
+def load_json_recording(json_file_path):
+    """
+    Load JSON recording and extract IMU data
+    """
+    try:
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception as e:
+        print(f"Error loading JSON file: {e}")
+        return np.array([]), np.array([]), np.array([]), {}
     
-    Acc_Magn=[]
-    Gyr_Magn=[]
-    ACCZ=[]
-    time=[]
-
-    for i in range(len(Acc_Magn_temp)):
-        Acc_Magn.append(Acc_Magn_temp[i][0])
-        Gyr_Magn.append(Gyr_Magn_temp[i][0])
-        time.append(time_temp[i][0])
-        ACCZ.append(ACCE[i,2])
-
-
-    index_start=0
-    X = testIMU[['POSI_X']].values
-    while X[index_start] == 0:
-        index_start += 1
+    # Extract accelerometer data
+    acc_data = data.get('accelerometer', [])
+    if acc_data:
+        acc_array = np.array([[sample.get('x', 0), sample.get('y', 0), sample.get('z', 0)] 
+                             for sample in acc_data])
+    else:
+        acc_array = np.array([])
     
-    ACCE=ACCE[index_start:]
-    GYRO=GYRO[index_start:]
-    ACCZ=ACCZ[index_start:]
-    time=time[index_start:]
-    Acc_Magn=Acc_Magn[index_start:]
-    Gyr_Magn=Gyr_Magn[index_start:]
-    POSI_X= POSI_X[index_start:]
-    POSI_Y= POSI_Y[index_start:]
-    longIMU= longIMU[index_start:]
-    latIMU = latIMU[index_start:]
-    ZIMUt = ZIMUt[index_start:]
-
-    origin_lat=latFP[0][0]
-    origin_lon=longFP[0][0]
-
-    ZIMU= []
-    for i in range(len(ZIMUt)):
-        ZIMU.append(ZIMUt[i][0])
-
-    a, Steps, Stance, fps, XX, YY, ZZ, long, lat=step_detection_accelerometer(Acc_Magn, time, plot=False, fig_idx=1)
+    # Extract gyroscope data
+    gyr_data = data.get('gyroscope', [])
+    if gyr_data:
+        # Convert alpha, beta, gamma to x, y, z
+        gyr_array = np.array([[sample.get('alpha', 0), sample.get('beta', 0), sample.get('gamma', 0)] 
+                             for sample in gyr_data])
+    else:
+        gyr_array = np.array([])
     
-    thetas, positions, SL = weiberg_stride_length_heading_position(ACCE,GYRO,time,Steps,Stance,1,1)
+    # Generate timestamps
+    num_samples = len(acc_data)
+    if num_samples > 0:
+        sample_rate = 50.0  # Adjust according to your sensors
+        time_array = np.arange(num_samples) / sample_rate
+    else:
+        time_array = np.array([])
+    
+    return acc_array, gyr_array, time_array, data
 
-    k = 3
+def extract_wifi_features(wifi_data):
+    """
+    Extract WiFi RSSI features from JSON data
+    """
+    if not wifi_data:
+        return np.array([])
+    
+    # Create a dictionary of AP MAC addresses to RSSI values
+    wifi_dict = {}
+    for ap in wifi_data:
+        mac = ap.get('BSSID', '')
+        rssi = ap.get('level', -100)  # Default to -100 if no RSSI
+        wifi_dict[mac] = rssi
+    
+    # Convert to feature vector (you may need to standardize AP order)
+    features = list(wifi_dict.values())
+    return np.array(features)
+
+def PDR_from_json(json_file_path, plot=True, K_parameter=0.4):
+    """
+    PDR function adapted for JSON recording files
+    """
+    print(f"Processing file: {json_file_path}")
+    
+    # Load data
+    acc_array, gyr_array, time_array, raw_data = load_json_recording(json_file_path)
+    
+    if len(acc_array) == 0:
+        print("No accelerometer data found in file")
+        return None, None, None, None
+    
+    # Calculate accelerometer magnitude
+    acc_magnitude = np.sqrt(acc_array[:, 0]**2 + acc_array[:, 1]**2 + acc_array[:, 2]**2)
+    
+    # Step detection
+    num_steps, step_indices, stance_phase = step_detection_accelerometer(
+        acc_magnitude, time_array, plot=plot, fig_idx=1
+    )
+    
+    print(f"Number of steps detected: {num_steps}")
+    
+    if num_steps == 0:
+        print("No steps detected")
+        return np.array([]), np.array([]), np.array([]), raw_data
+    
+    # Calculate PDR positions
+    thetas, positions, stride_lengths = weiberg_stride_length_heading_position(
+        acc_array, gyr_array, time_array, step_indices, stance_phase,
+        ver=plot, idx_fig=2
+    )
+    
+    # Metadata
+    metadata = {
+        'room': raw_data.get('room', 'unknown'),
+        'num_steps': num_steps,
+        'total_distance': np.sum(stride_lengths) if len(stride_lengths) > 0 else 0,
+        'duration': time_array[-1] if len(time_array) > 0 else 0,
+        'avg_step_length': np.mean(stride_lengths) if len(stride_lengths) > 0 else 0,
+        'wifi_aps': len(raw_data.get('wifi', [])),
+        'gps_available': 'gps' in raw_data and raw_data['gps'] is not None
+    }
+    
+    print(f"Total distance traveled: {metadata['total_distance']:.2f} m")
+    print(f"Average step length: {metadata['avg_step_length']:.2f} m")
+    
+    return thetas, positions, stride_lengths, metadata
+
+def integrated_positioning_system(json_file_path, wifi_training_data=None, plot=True, q=0.1, r=1.0):
+    """
+    Integrated positioning system combining PDR and WiFi fingerprinting with Kalman filtering
+    
+    Args:
+        json_file_path: Path to JSON recording file
+        wifi_training_data: Training data for WiFi fingerprinting (DataFrame or file path)
+        plot: Whether to show plots
+        q: Process noise covariance
+        r: Measurement noise covariance
+    """
+    print(f"Processing integrated positioning for: {json_file_path}")
+    
+    # Step 1: PDR processing
+    thetas, positions, stride_lengths, metadata = PDR_from_json(json_file_path, plot=False)
+    
+    if positions is None or len(positions) == 0:
+        print("No PDR data available")
+        return None, None
+    
+    # Step 2: WiFi fingerprinting (if training data available)
+    wifi_positions = None
+    if wifi_training_data is not None:
+        try:
+            # Load training data
+            if isinstance(wifi_training_data, str):
+                train_data = pd.read_csv(wifi_training_data, delimiter=';')
+            else:
+                train_data = wifi_training_data
+            
+            # Extract training features and positions
+            position_cols = ['long', 'lat', 'Z']
+            if all(col in train_data.columns for col in position_cols):
+                train_positions = train_data[position_cols].values
+                train_features = train_data.drop(columns=position_cols).values
+                
+                # Load test data WiFi features
+                _, _, _, raw_data = load_json_recording(json_file_path)
+                wifi_data = raw_data.get('wifi', [])
+                
+                if wifi_data:
+                    # Extract WiFi features from test data
+                    test_features = extract_wifi_features(wifi_data)
+                    
+                    if len(test_features) > 0:
+                        # KNN positioning
+                        knn = KNeighborsRegressor(n_neighbors=3)
+                        knn.fit(train_features, train_positions)
+                        
+                        # Create WiFi positions for each step
+                        wifi_positions = np.array([knn.predict([test_features])[0] 
+                                                 for _ in range(len(stride_lengths))])
+                        
+                        # Convert to local coordinates if needed
+                        if len(wifi_positions) > 0:
+                            origin_lat, origin_lon = wifi_positions[0, 1], wifi_positions[0, 0]
+                            wifi_xy = np.array([latlon_to_xy(pos[1], pos[0], origin_lat, origin_lon) 
+                                              for pos in wifi_positions])
+                            wifi_positions = np.column_stack((wifi_xy, wifi_positions[:, 2]))
+                
+        except Exception as e:
+            print(f"Error in WiFi fingerprinting: {e}")
+    
+    # Step 3: Kalman filtering fusion
+    if wifi_positions is not None and len(wifi_positions) > 0:
+        print("Applying Kalman filter fusion...")
+        fused_positions = kalman_filter_3d(stride_lengths, thetas, wifi_positions, q, r)
+    else:
+        print("Using PDR only (no WiFi data)")
+        # Convert PDR positions to 3D (assuming ground level)
+        fused_positions = np.column_stack((positions[1:, :], np.zeros(len(positions) - 1)))
+    
+    # Step 4: Plotting
+    if plot and len(fused_positions) > 0:
+        fig = plt.figure(figsize=(15, 5))
         
-    knn = KNeighborsRegressor(n_neighbors=k)
+        # 2D trajectory
+        ax1 = fig.add_subplot(131)
+        ax1.plot(positions[:, 0], positions[:, 1], 'b-o', label='PDR', markersize=4)
+        if wifi_positions is not None:
+            ax1.plot(wifi_positions[:, 0], wifi_positions[:, 1], 'r-s', label='WiFi', markersize=4)
+        ax1.plot(fused_positions[:, 0], fused_positions[:, 1], 'g-^', label='Fused', markersize=4)
+        ax1.set_xlabel('East (m)')
+        ax1.set_ylabel('North (m)')
+        ax1.set_title('2D Trajectory Comparison')
+        ax1.legend()
+        ax1.grid(True)
+        ax1.axis('equal')
+        
+        # 3D trajectory
+        ax2 = fig.add_subplot(132, projection='3d')
+        ax2.plot(fused_positions[:, 0], fused_positions[:, 1], fused_positions[:, 2], 
+                'g-o', label='Fused 3D', markersize=4)
+        ax2.set_xlabel('East (m)')
+        ax2.set_ylabel('North (m)')
+        ax2.set_zlabel('Height (m)')
+        ax2.set_title('3D Fused Trajectory')
+        
+        # Step lengths
+        ax3 = fig.add_subplot(133)
+        ax3.plot(stride_lengths, 'b-o', markersize=4)
+        ax3.set_xlabel('Step Number')
+        ax3.set_ylabel('Stride Length (m)')
+        ax3.set_title('Step Lengths')
+        ax3.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    return fused_positions, metadata
 
-    train = pd.read_csv(knntrainfile, delimiter=';')
-                   
-    # Extract positions and RSSI values
-    POSI_train = train[['long','lat','Z']].values
-    RSSI_train = train.drop(columns=['long', 'lat','Z']).values
-
-    knn.fit(RSSI_train, POSI_train)
-
-    pred=knn.predict(fps)
-    predxy=[latlon_to_xy(pred[i,1],pred[i,0],origin_lat,origin_lon) for i in range(len(pred))]
-    predxy=np.hstack((np.array([predxy[i][0] for i in range(len(predxy))]).reshape(-1,1),np.array([predxy[i][1] for i in range(len(predxy))]).reshape(-1,1)))
-    predxyz=np.hstack((predxy,np.array([pred[i,2] for i in range(len(pred))]).reshape(-1,1)))
-
-    fusedkal=kalman_filter3d(SL, thetas, predxyz, q, r)
-
-    # Create a 3D plot
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plotting the data
-    ax.plot(fusedkal[:,0], fusedkal[:,1], fusedkal[:,2], color='y', marker='o', linestyle='-', linewidth=2, markersize=5)
-    # Labeling the axes
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
-    # Title
-    ax.set_title('3D Plot of X, Y and Z')
-
-    # Show plot
-    plt.show()
-
+def batch_process_recordings(data_folder, wifi_training_file=None, room_filter=None):
+    """
+    Process all JSON recordings in a folder
+    """
+    results = {}
+    
+    for door_folder in os.listdir(data_folder):
+        if door_folder.startswith('door_'):
+            room_num = door_folder.split('_')[1]
+            if room_filter and room_num != room_filter:
+                continue
+                
+            door_path = os.path.join(data_folder, door_folder)
+            if not os.path.isdir(door_path):
+                continue
+                
+            print(f"\n=== Processing room {room_num} ===")
+            results[room_num] = []
+            
+            for filename in os.listdir(door_path):
+                if filename.endswith('.json'):
+                    file_path = os.path.join(door_path, filename)
+                    try:
+                        positions, metadata = integrated_positioning_system(
+                            file_path, wifi_training_file, plot=False
+                        )
+                        
+                        if positions is not None and len(positions) > 0:
+                            results[room_num].append({
+                                'filename': filename,
+                                'positions': positions,
+                                'metadata': metadata
+                            })
+                    except Exception as e:
+                        print(f"Error processing {filename}: {e}")
+    
+    return results
