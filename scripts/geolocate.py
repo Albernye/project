@@ -53,8 +53,11 @@ def aggregate_entry(entry):
     return feat
 
 
-def predict_room(k=3):
-    """Prédit la salle basée sur la dernière mesure live."""
+def predict_position(k=3):
+    """
+    Prédit la position basée sur la dernière mesure live.
+    Retourne une position estimée (longitude, latitude, étage).
+    """
     baseline = load_baseline()
     if not baseline:
         raise RuntimeError("No baseline data available for prediction")
@@ -79,7 +82,7 @@ def predict_room(k=3):
                 continue
             a = {k: live_feat[k] for k in common_keys}
             b = {k: e_feat[k] for k in common_keys}
-            distances.append((room, euclidean(a, b)))
+            distances.append((room, euclidean(a, b), e.get('gps', None)))
 
     if not distances:
         raise RuntimeError("No baseline data available for prediction")
@@ -87,15 +90,50 @@ def predict_room(k=3):
     # k plus proches voisins
     distances.sort(key=lambda x: x[1])
     topk = distances[:k]
-    votes = {}
-    for room_, d in topk:
-        votes[room_] = votes.get(room_, 0) + 1
 
-    # Sélection du meilleur
-    best = sorted(votes.items(), key=lambda x: (-x[1], next(d for r, d in topk if r == x[0])))[0][0]
-    return best, topk
+    # Calculer la position moyenne des k plus proches voisins
+    total_weight = sum(1/d for _, d, _ in topk)
+    weighted_sum_x = 0.0
+    weighted_sum_y = 0.0
+    weighted_sum_z = 0.0
+
+    for room, d, gps in topk:
+        if gps:
+            weight = 1/d if d > 0 else 1.0
+            weighted_sum_x += gps['longitude'] * weight
+            weighted_sum_y += gps['latitude'] * weight
+            weighted_sum_z += gps['floor'] * weight
+
+    if total_weight > 0:
+        avg_x = weighted_sum_x / total_weight
+        avg_y = weighted_sum_y / total_weight
+        avg_z = weighted_sum_z / total_weight
+    else:
+        # Si aucun voisin n'a de position GPS, utiliser une position par défaut pour la salle prédite
+        votes = {}
+        for room, d, _ in topk:
+            votes[room] = votes.get(room, 0) + 1
+        best_room = sorted(votes.items(), key=lambda x: -x[1])[0][0]
+        # Ici, nous aurions besoin d'une table de correspondance entre les salles et leurs positions
+        avg_x, avg_y, avg_z = get_room_position(best_room)  # Fonction à implémenter
+
+    return (avg_x, avg_y, avg_z), topk
+
+def get_room_position(room):
+    """
+    Retourne la position par défaut pour une salle donnée.
+    À implémenter avec les vraies coordonnées des salles.
+    """
+    # Exemple de données fictives
+    room_positions = {
+        '201': (10.0, 20.0, 1),
+        '202': (10.0, 25.0, 1),
+        '203': (15.0, 20.0, 1),
+        # Ajouter d'autres salles...
+    }
+    return room_positions.get(room, (0.0, 0.0, 0))
 
 
 if __name__ == '__main__':
-    room, neighbors = predict_room()
-    print(f"Predicted room: {room}, neighbors: {neighbors}")
+    position, neighbors = predict_position()
+    print(f"Predicted position: {position}, neighbors: {neighbors}")

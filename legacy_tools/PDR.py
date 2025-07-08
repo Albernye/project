@@ -236,73 +236,86 @@ def load_json_recording(json_file_path):
     
     return acc_array, gyr_array, time_array, data
 
-def PDR_from_json(json_file_path, plot=True, K_parameter=0.4):
+def PDR_from_json(json_file_path, plot=True, K_parameter=0.4, incremental=False, previous_state=None):
     """
     Fonction PDR adaptée pour les fichiers JSON de votre projet
-    
     Args:
         json_file_path: Chemin vers le fichier JSON d'enregistrement
         plot: Affichage des graphiques
         K_parameter: Paramètre de Weinberg à ajuster selon la démarche
-    
+        incremental: Si True, traite les données de manière incrémentielle
+        previous_state: État précédent pour le traitement incrémentiel
     Returns:
         thetas: Directions des pas
         positions: Positions calculées par PDR
         stride_lengths: Longueurs des pas
         metadata: Métadonnées de l'enregistrement
+        new_state: Nouveau état pour le traitement incrémentiel suivant
     """
     print(f"Traitement du fichier: {json_file_path}")
-    
+
     # Chargement des données
     acc_array, gyr_array, time_array, raw_data = load_json_recording(json_file_path)
-    
+
     if len(acc_array) == 0:
         print("Aucune donnée accéléromètre trouvée dans le fichier")
-        return None, None, None, None
-    
-    # Calcul de la magnitude de l'accéléromètre
-    acc_magnitude = np.sqrt(acc_array[:, 0]**2 + acc_array[:, 1]**2 + acc_array[:, 2]**2)
-    
-    # Détection des pas
-    num_steps, step_indices, stance_phase = step_detection_accelerometer(
-        acc_magnitude, time_array, plot=plot, fig_idx=1
-    )
-    
-    print(f"Nombre de pas détectés: {num_steps}")
-    
-    if num_steps == 0:
-        print("Aucun pas détecté")
-        return np.array([]), np.array([]), np.array([]), raw_data
-    
-    # Calcul des positions PDR
-    thetas, positions, stride_lengths = weiberg_stride_length_heading_position(
-        acc_array, gyr_array, time_array, step_indices, stance_phase, 
-        ver=plot, idx_fig=2
-    )
-    
+        return None, None, None, None, None
+
+    if incremental and previous_state is not None:
+        # Traitement incrémentiel
+        pass  # À implémenter
+    else:
+        # Calcul de la magnitude de l'accéléromètre
+        acc_magnitude = np.sqrt(acc_array[:, 0]**2 + acc_array[:, 1]**2 + acc_array[:, 2]**2)
+
+        # Détection des pas
+        num_steps, step_indices, stance_phase = step_detection_accelerometer(
+            acc_magnitude, time_array, plot=plot, fig_idx=1
+        )
+
+        print(f"Nombre de pas détectés: {num_steps}")
+
+        if num_steps == 0:
+            print("Aucun pas détecté")
+            return np.array([]), np.array([]), np.array([]), None, None
+
+        # Calcul des positions PDR
+        thetas, positions, stride_lengths = weiberg_stride_length_heading_position(
+            acc_array, gyr_array, time_array, step_indices, stance_phase,
+            ver=plot, idx_fig=2
+        )
+
     # Métadonnées
     metadata = {
         'room': raw_data.get('room', 'unknown'),
         'num_steps': num_steps,
-        'total_distance': np.sum(stride_lengths),
+        'total_distance': np.sum(stride_lengths) if len(stride_lengths) > 0 else 0,
         'duration': time_array[-1] if len(time_array) > 0 else 0,
         'avg_step_length': np.mean(stride_lengths) if len(stride_lengths) > 0 else 0,
         'wifi_aps': len(raw_data.get('wifi', [])),
         'gps_available': 'gps' in raw_data and raw_data['gps'] is not None
     }
-    
+
     print(f"Distance totale parcourue: {metadata['total_distance']:.2f} m")
     print(f"Longueur moyenne des pas: {metadata['avg_step_length']:.2f} m")
-    
-    return thetas, positions, stride_lengths, metadata
+
+    new_state = {
+        'last_position': positions[-1] if len(positions) > 0 else None,
+        'last_time': time_array[-1] if len(time_array) > 0 else 0,
+        # Ajouter d'autres éléments d'état nécessaires
+    }
+
+    return thetas, positions, stride_lengths, metadata, new_state
 
 def batch_process_recordings(data_folder, room_filter=None):
     """
     Traite tous les enregistrements JSON d'un dossier
-    
+
     Args:
         data_folder: Dossier contenant les enregistrements
         room_filter: Filtrer par numéro de salle (ex: "201")
+    Returns:
+        results: Dictionnaire avec les résultats par salle
     """
     results = {}
     
