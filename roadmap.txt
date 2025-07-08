@@ -37,25 +37,31 @@ Tâches POC restantes
 
         Vérifier que l’URL fonctionne sur ton téléphone. HAVE TO GO TO THE BUILDING
 
-    Structurer l’import des enregistrements ✅
+    Structurer l’import des enregistrements ✅✅
 
         Plutôt que d’inscrire tout dans un seul sensor_data.json, créer un dossier data/raw/door_<room>/recording_<i>.json ou CSV.
 
         Adapter collect_sensor_data() pour qu’il génère automatiquement ces sous‑dossiers et fichiers.
 
-    Automatiser le routage QGIS depuis Python
+    Automatiser le routage QGIS depuis Python✅
 
         Créer un script (ou endpoint) qui exécute pgr_dijkstra et écrit un GeoJSON ou un shapefile.
 
         Charger ce GeoJSON dans QGIS depuis ton projet Python (ex : via un bouton “Export route”).
+    
+    Transformer les données PDR en CSV
 
-    Relier PDR offline à la géolocalisation
+        Écrire un script qui prend les enregistrements JSON et les convertit en CSV avec les colonnes : timestamp, x, y, z, orientation.
+
+        Ajouter une colonne pour la salle si disponible (ex : “201”).
+
+    Relier PDR offline à la géolocalisation ✅
 
         Écrire un module qui, pour chaque parcours CSV, calcule la trace PDR et la compare à la route de référence.
 
         Visualiser dans QGIS la trace PDR vs. la ligne centrale.
 
-    Activer le Wi‑Fi fingerprinting
+    Activer le Wi‑Fi fingerprinting ✅
 
         Lors de la collecte native (app ou Sensor App), inclure un scan Wi‑Fi pour récupérer ssid et rssi.
 
