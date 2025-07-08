@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5001:5000"
+    volumes:
+      - ./data:/app/data
+      - ./qrcodes:/app/qrcodes
+    environment:
+      - FLASK_ENV=production
+      - BASE_URL=${BASE_URL}
+      - EMAIL_USER=${EMAIL_USER}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}

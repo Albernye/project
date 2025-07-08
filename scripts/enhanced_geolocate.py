@@ -309,12 +309,22 @@ def euclidean(a, b):
 def aggregate_entry(entry):
     """Transforme une entrée agrégée (stats) en vecteur de features plat."""
     feat = {}
+    # Process IMU sensors
     for sensor in ('accelerometer', 'gyroscope', 'magnetometer', 'barometer'):
         val = entry.get(sensor)
         if isinstance(val, dict):
             for k, v in val.items():
                 if isinstance(v, (int, float)):
                     feat[f"{sensor}_{k}"] = v
+
+    # Process WiFi RSSI with device normalization
+    if 'wifi' in entry:
+        rssi_values = [ap.get('rssi', -100) for ap in entry['wifi'] if ap.get('ssid')]
+        if rssi_values:
+            avg_rssi = np.mean(rssi_values)
+            # Normalize between device types using hyperbolic tangent
+            feat['wifi_normalized'] = np.tanh((avg_rssi + 90) / 40)  # Maps -90dBm to ~0, -50dBm to ~1
+            feat['wifi_ap_count'] = len(rssi_values)
     return feat
 
 def enhanced_predict_position(k=5, use_wifi_weighting=True):

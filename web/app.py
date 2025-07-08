@@ -16,6 +16,11 @@ from datetime import datetime
 
 app = Flask(__name__)
 
+# Initialize position tracking variables
+current_position = None
+previous_position = None
+position_history = []
+
 # Configuration of the Flask application
 def get_project_root():
     """Return the root directory of the project"""

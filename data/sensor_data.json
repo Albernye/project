@@ -256,5 +256,106 @@
       "lat": 41.4,
       "lng": 2.2
     }
+  },
+  {
+    "room": "201",
+    "timestamp": "2025-07-08T11:07:54.367862Z",
+    "client_ip": "127.0.0.1",
+    "accelerometer": {
+      "mean_x": 0.1,
+      "std_x": 0.0,
+      "mean_y": 0.2,
+      "std_y": 0.0,
+      "mean_z": 0.0,
+      "std_z": 0.0
+    },
+    "gyroscope": {
+      "mean_alpha": 1.0,
+      "std_alpha": 0.0,
+      "mean_beta": 0.5,
+      "std_beta": 0.0,
+      "mean_gamma": -0.2,
+      "std_gamma": 0.0
+    },
+    "magnetometer": {
+      "mean_x": 10.0,
+      "std_x": 0.0,
+      "mean_y": -20.0,
+      "std_y": 0.0,
+      "mean_z": 30.0,
+      "std_z": 0.0
+    },
+    "barometer": {
+      "mean_pressure": 1019.8,
+      "std_pressure": 0.0
+    },
+    "wifi": [
+      {
+        "ssid": "AP1",
+        "rssi": -40
+      }
+    ],
+    "gps": {
+      "lat": 41.4,
+      "lng": 2.2
+    }
+  },
+  {
+    "room": "201",
+    "timestamp": "2025-07-08T11:10:10.238518Z",
+    "client_ip": "127.0.0.1",
+    "accelerometer": {
+      "mean_x": 0.1,
+      "std_x": 0.0,
+      "mean_y": 0.2,
+      "std_y": 0.0,
+      "mean_z": 0.0,
+      "std_z": 0.0
+    },
+    "gyroscope": {
+      "mean_alpha": 1.0,
+      "std_alpha": 0.0,
+      "mean_beta": 0.5,
+      "std_beta": 0.0,
+      "mean_gamma": -0.2,
+      "std_gamma": 0.0
+    },
+    "magnetometer": {
+      "mean_x": 10.0,
+      "std_x": 0.0,
+      "mean_y": -20.0,
+      "std_y": 0.0,
+      "mean_z": 30.0,
+      "std_z": 0.0
+    },
+    "barometer": {
+      "mean_pressure": 1019.8,
+      "std_pressure": 0.0
+    },
+    "wifi": [
+      {
+        "ssid": "AP1",
+        "rssi": -40
+      }
+    ],
+    "gps": {
+      "lat": 41.4,
+      "lng": 2.2
+    }
+  },
+  {
+    "room": "unknown",
+    "timestamp": "2025-07-08T11:13:45.279478Z",
+    "client_ip": "127.0.0.1",
+    "wifi": [
+      {
+        "ssid": "AP1",
+        "rssi": -75
+      },
+      {
+        "ssid": "AP2",
+        "rssi": -65
+      }
+    ]
   }
 ]
