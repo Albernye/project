@@ -2,11 +2,15 @@ from flask import Flask, render_template, request, jsonify
 import json
 import os
 import numpy as np
-from legacy_tools.PDR import PDR_from_json
-from scripts.geolocate import load_baseline, load_latest_live, get_room_position
-from scripts.geolocate import predict_position
+from scripts.enhanced_geolocate import (
+    update_position_with_fusion,
+    predict_room,
+    enhanced_predict_position,
+    get_room_position
+)
+from scripts.enhanced_pdr import enhanced_PDR_from_json
 from scripts.collect_sensor_data import collect_sensor_data
-from scripts.geolocate import predict_room
+# predict_room now imported from enhanced_geolocate
 from scripts.route import route_between
 from datetime import datetime
 
@@ -156,74 +160,59 @@ def update_position():
         if not success:
             print("Warning: Failed to save sensor data")
 
-        # Traiter les données avec PDR pour obtenir la nouvelle position
-        # Note: Nous devons adapter PDR_from_json pour accepter directement les données plutôt qu'un fichier
-        # Pour l'instant, nous allons sauvegarder les données dans un fichier temporaire
+        # Save sensor data to temp file for processing
         temp_file_path = os.path.join(get_project_root(), 'data', 'temp_sensor_data.json')
         with open(temp_file_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-        # Appliquer PDR
-        thetas, positions, stride_lengths, metadata, new_state = PDR_from_json(
-            temp_file_path, plot=False, incremental=True, previous_state=getattr(app, 'pdr_state', None)
+        # Process with enhanced PDR
+        try:
+            headings, pdr_positions, stride_lengths, pdr_metadata, _ = enhanced_PDR_from_json(temp_file_path)
+            latest_pdr_position = pdr_positions[-1] if len(pdr_positions) > 0 else None
+        except Exception as e:
+            print(f"❌ PDR processing error: {e}")
+            latest_pdr_position = None
+            pdr_metadata = {}
+
+        # Get WiFi fingerprinting position
+        try:
+            wifi_position, _, wifi_confidence = enhanced_predict_position()
+        except Exception as e:
+            print(f"❌ WiFi positioning error: {e}")
+            wifi_position = None
+            wifi_confidence = 0.0
+
+        # Fuse positions using enhanced system
+        fusion_result = update_position_with_fusion(
+            pdr_position=latest_pdr_position,
+            wifi_position=wifi_position,
+            pdr_metadata=pdr_metadata,
+            force_wifi_correction=False
         )
 
-        # Mettre à jour l'état PDR dans l'application Flask
-        app.pdr_state = new_state
-
-        if positions is not None and len(positions) > 0:
-            # Mettre à jour la position actuelle
-            current_position = positions[-1]  # Dernière position calculée
-
-            # Calculer la distance depuis la dernière position
-            if previous_position is not None:
-                distance = np.linalg.norm(np.array(current_position) - np.array(previous_position))
-            else:
-                distance = 0
-
-            # Détecter la dérive
-            if distance > 2.0:  # Seuil de 2 mètres
-                print(f"🚨 Drift detected: {distance:.2f} meters")
-
-                # Recalage par fingerprinting Wi-Fi
-                try:
-                    position, neighbors = predict_position()
-                    print(f"Wi-Fi fingerprinting suggests position: {position}")
-
-                    # Corriger la position actuelle
-                    current_position = position[:2]  # Utiliser uniquement longitude et latitude, ignorer l'étage pour l'instant
-
-                    # Mettre à jour la position dans l'état PDR
-                    if app.pdr_state is not None:
-                        app.pdr_state['last_position'] = current_position
-
-                except Exception as e:
-                    print(f"⚠️ Wi-Fi fingerprinting failed: {e}")
-
-                # Proposer un scan QR pour confirmation
-                return jsonify({
-                    "status": "success",
-                    "position": current_position.tolist(),
-                    "drift_detected": True,
-                    "suggested_position": position,
-                    "message": "Drift detected. Please scan a QR code to confirm your position."
-                })
-
-            # Mettre à jour l'historique des positions
+        # Update global position state
+        current_position = fusion_result['position']
+        if previous_position is None:
             previous_position = current_position
-            position_history.append(current_position)
+        position_history.append(current_position)
 
-            return jsonify({
-                "status": "success",
-                "position": current_position.tolist(),
-                "drift_detected": False
-            })
+        # Prepare response
+        response = {
+            "status": "success",
+            "position": current_position.tolist(),
+            "drift_detected": fusion_result['drift_detected'],
+            "drift_distance": fusion_result['drift_distance'],
+            "source": fusion_result['source'],
+            "pdr_confidence": fusion_result['pdr_confidence'],
+            "wifi_confidence": fusion_result['wifi_confidence']
+        }
 
-        else:
-            return jsonify({
-                "status": "error",
-                "message": "No position calculated from PDR"
-            }), 400
+        # Handle drift correction
+        if fusion_result['drift_detected']:
+            response["message"] = "Drift detected. Please scan a QR code to confirm position."
+            response["suggested_position"] = wifi_position.tolist() if wifi_position is not None else current_position.tolist()
+
+        return jsonify(response)
 
     except Exception as e:
         print(f"❌ Error during position update: {e}")
