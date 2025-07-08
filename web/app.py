@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, jsonify
 import json
 import os
 import numpy as np
-from legacy_tools import PDR_from_json
+from legacy_tools.PDR import PDR_from_json
 from scripts.geolocate import load_baseline, load_latest_live, get_room_position
 from scripts.geolocate import predict_position
 from scripts.collect_sensor_data import collect_sensor_data
