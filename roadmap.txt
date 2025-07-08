@@ -39,9 +39,9 @@ Tâches POC restantes
 
     Structurer l’import des enregistrements ✅✅
 
-        Plutôt que d’inscrire tout dans un seul sensor_data.json, créer un dossier data/raw/door_<room>/recording_<i>.json ou CSV.
+        Plutôt que d’inscrire tout dans un seul sensor_data.json, créer un dossier data/raw/door_<room>/recording_<i>.json ou CSV.✅
 
-        Adapter collect_sensor_data() pour qu’il génère automatiquement ces sous‑dossiers et fichiers.
+        Adapter collect_sensor_data() pour qu’il génère automatiquement ces sous‑dossiers et fichiers.✅
 
     Automatiser le routage QGIS depuis Python✅
 
@@ -53,11 +53,11 @@ Tâches POC restantes
 
         Écrire un script qui prend les enregistrements JSON et les convertit en CSV avec les colonnes : timestamp, x, y, z, orientation.
 
-        Ajouter une colonne pour la salle si disponible (ex : “201”).
+        Ajouter une colonne pour la salle si disponible (ex : “201”). 
 
     Relier PDR offline à la géolocalisation ✅
 
-        Écrire un module qui, pour chaque parcours CSV, calcule la trace PDR et la compare à la route de référence.
+        Écrire un module qui, pour chaque parcours CSV, calcule la trace PDR et la compare à la route de référence. ✅
 
         Visualiser dans QGIS la trace PDR vs. la ligne centrale.
 
@@ -71,4 +71,4 @@ Tâches POC restantes
 
         En simulation, faire dériver la trace PDR volontairement, détecter un écart > 2 m et re‑localiser par kNN Wi‑Fi.
 
-        Ajouter un scénario de “nouveau scan QR” pour actualiser la position de référence.
+        Ajouter un scénario de “nouveau scan QR” pour actualiser la position de référence. ✅
