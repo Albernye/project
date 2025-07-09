@@ -1,4 +1,4 @@
-import json
+import csv
 import os
 from datetime import datetime
 import numpy as np
@@ -21,9 +21,36 @@ def collect_sensor_data(data):
         # 1️⃣ Save raw in data/recordings/door_<room>/
         raw_dir = os.path.join(project_root, 'data','recordings', f'door_{room}')
         os.makedirs(raw_dir, exist_ok=True)
-        raw_path = os.path.join(raw_dir, f'recording_{ts}.json')
-        with open(raw_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        raw_path = os.path.join(raw_dir, f'recording_{ts}.csv')
+        with open(raw_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            # Écrire l'en-tête
+            writer.writerow(['sensor_type', 'x', 'y', 'z', 'timestamp', 'room', 'client_ip'])
+            
+            # Écrire les données brutes
+            for sensor in ['accelerometer', 'gyroscope', 'magnetometer']:
+                if sensor in data:
+                    for entry in data[sensor]:
+                        writer.writerow([
+                            sensor,
+                            entry.get('x', entry.get('alpha', 0.0)),
+                            entry.get('y', entry.get('beta', 0.0)),
+                            entry.get('z', entry.get('gamma', 0.0)),
+                            ts,
+                            room,
+                            data.get("client_ip")
+                        ])
+            
+            if 'barometer' in data:
+                for entry in data['barometer']:
+                    writer.writerow([
+                        'barometer',
+                        entry.get('pressure', 0.0),
+                        '', '',  # Colonnes vides pour y,z
+                        ts,
+                        room,
+                        data.get("client_ip")
+                    ])
 
         # 2️⃣ Aggregate and write JSON array to data/sensor_data.json
         aggregated = {
@@ -44,18 +71,41 @@ def collect_sensor_data(data):
         if "gps" in data:
             aggregated["gps"]  = data["gps"]
 
-        json_path = os.path.join(project_root, 'data', 'sensor_data.json')
-        os.makedirs(os.path.dirname(json_path), exist_ok=True)
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                existing = json.load(f)
-                if not isinstance(existing, list):
-                    existing = []
-        except (FileNotFoundError, json.JSONDecodeError):
-            existing = []
-        existing.append(aggregated)
-        with open(json_path, 'w', encoding='utf-8') as f:
-            json.dump(existing, f, ensure_ascii=False, indent=2)
+        csv_path = os.path.join(project_root, 'data', 'sensor_data.csv')
+        os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+        
+        # Créer l'en-tête si le fichier n'existe pas
+        header = ['room', 'timestamp', 'client_ip'] 
+        header += [f'{sensor}_{stat}_{axis}' 
+                 for sensor in ['accelerometer', 'gyroscope', 'magnetometer'] 
+                 for stat in ['mean', 'std'] 
+                 for axis in (['x','y','z'] if sensor != 'gyroscope' else ['alpha','beta','gamma'])]
+        header += ['barometer_mean_pressure', 'barometer_std_pressure']
+        
+        # Écrire les données
+        with open(csv_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=header)
+            if f.tell() == 0:
+                writer.writeheader()
+            
+            row = {
+                'room': room,
+                'timestamp': aggregated['timestamp'],
+                'client_ip': aggregated.get("client_ip")
+            }
+            
+            for sensor in ['accelerometer', 'gyroscope', 'magnetometer']:
+                if sensor in aggregated:
+                    for stat in ['mean', 'std']:
+                        for axis in aggregated[sensor]:
+                            if axis.startswith(f'{stat}_'):
+                                row[axis] = aggregated[sensor][axis]
+            
+            if 'barometer' in aggregated:
+                for stat in ['mean', 'std']:
+                    row[f'barometer_{stat}_pressure'] = aggregated['barometer'].get(f'{stat}_pressure', 0.0)
+            
+            writer.writerow(row)
 
         return True
 

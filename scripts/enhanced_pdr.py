@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-import json
+import csv
+import pandas as pd
 import warnings
 import math
 import matplotlib.pyplot as plt
@@ -417,19 +418,33 @@ class EnhancedPDR:
         
         return min(1.0, confidence)
 
-def enhanced_PDR_from_json(json_file_path, plot=True, user_height=None, sample_rate=50.0):
+def enhanced_PDR_from_csv(csv_file_path, plot=True, user_height=None, sample_rate=50.0):
     """
-    Enhanced PDR processing function compatible with existing API
+    Enhanced PDR processing function compatible with CSV input
     """
-    # Load JSON data
-    with open(json_file_path, 'r') as f:
-        json_data = json.load(f)
+    # Load CSV data
+    df = pd.read_csv(csv_file_path)
+    # Conversion vers le format attendu
+    sensor_data = {
+        'accelerometer': [],
+        'gyroscope': [],
+        'magnetometer': []
+    }
+    
+    for _, row in df.iterrows():
+        sensor_type = row['sensor_type']
+        entry = {
+            'x': row.get('x', row.get('alpha', 0.0)),
+            'y': row.get('y', row.get('beta', 0.0)),
+            'z': row.get('z', row.get('gamma', 0.0))
+        }
+        sensor_data[sensor_type].append(entry)
     
     # Create enhanced PDR instance
     pdr = EnhancedPDR(sample_rate=sample_rate)
     
     # Process data
-    results = pdr.process_json_data(json_data, plot=plot, user_height=user_height)
+    results = pdr.process_json_data(sensor_data, plot=plot, user_height=user_height)
     
     # Return in compatible format
     return (
@@ -465,7 +480,7 @@ def batch_process_enhanced(data_folder, room_filter=None, plot=False):
                     file_path = os.path.join(door_path, filename)
                     
                     try:
-                        headings, positions, stride_lengths, metadata, _ = enhanced_PDR_from_json(
+                        headings, positions, stride_lengths, metadata, _ = enhanced_PDR_from_csv(
                             file_path, plot=plot
                         )
                         

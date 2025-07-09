@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 import json
 import os
+import csv
 import numpy as np
 from scripts.enhanced_geolocate import (
     update_position_with_fusion,
@@ -8,7 +9,7 @@ from scripts.enhanced_geolocate import (
     enhanced_predict_position,
     get_room_position
 )
-from scripts.enhanced_pdr import enhanced_PDR_from_json
+from scripts.enhanced_pdr import enhanced_PDR_from_csv
 from scripts.collect_sensor_data import collect_sensor_data
 # predict_room now imported from enhanced_geolocate
 from scripts.route import route_between
@@ -83,19 +84,15 @@ def view_data():
     """
     try:
         project_root = get_project_root()
-        data_file = os.path.join(project_root, 'data', 'sensor_data.json')
+        data_file = os.path.join(project_root, 'data', 'sensor_data.csv')
         if not os.path.exists(data_file):
             return jsonify({"message": "No data collected yet"})
 
         entries = []
         with open(data_file, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    try:
-                        entries.append(json.loads(line))
-                    except:
-                        continue
+            reader = csv.DictReader(f)
+            for row in reader:
+                entries.append(dict(row))
 
         return jsonify({
             "total_entries": len(entries),
@@ -166,13 +163,27 @@ def update_position():
             print("Warning: Failed to save sensor data")
 
         # Save sensor data to temp file for processing
-        temp_file_path = os.path.join(get_project_root(), 'data', 'temp_sensor_data.json')
-        with open(temp_file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        temp_file_path = os.path.join(get_project_root(), 'data', 'temp_sensor_data.csv')
+        with open(temp_file_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow(['sensor_type', 'x', 'y', 'z', 'timestamp', 'room', 'client_ip'])
+            # Écrire les données brutes selon le nouveau format
+            for sensor in ['accelerometer', 'gyroscope', 'magnetometer']:
+                if sensor in data:
+                    for entry in data[sensor]:
+                        writer.writerow([
+                            sensor,
+                            entry.get('x', entry.get('alpha', 0.0)),
+                            entry.get('y', entry.get('beta', 0.0)),
+                            entry.get('z', entry.get('gamma', 0.0)),
+                            datetime.utcnow().isoformat() + 'Z',
+                            data.get("room", "unknown"),
+                            data.get("client_ip")
+                        ])
 
         # Process with enhanced PDR
         try:
-            headings, pdr_positions, stride_lengths, pdr_metadata, _ = enhanced_PDR_from_json(temp_file_path)
+            headings, pdr_positions, stride_lengths, pdr_metadata, _ = enhanced_PDR_from_csv(temp_file_path)
             latest_pdr_position = pdr_positions[-1] if len(pdr_positions) > 0 else None
         except Exception as e:
             print(f"❌ PDR processing error: {e}")
