@@ -1,0 +1,4 @@
+room,timestamp,client_ip,accelerometer_mean_x,accelerometer_mean_y,accelerometer_mean_z,accelerometer_std_x,accelerometer_std_y,accelerometer_std_z,gyroscope_mean_alpha,gyroscope_mean_beta,gyroscope_mean_gamma,gyroscope_std_alpha,gyroscope_std_beta,gyroscope_std_gamma,magnetometer_mean_x,magnetometer_mean_y,magnetometer_mean_z,magnetometer_std_x,magnetometer_std_y,magnetometer_std_z,barometer_mean_pressure,barometer_std_pressure,wifi_ssid_1,wifi_ssid_2,wifi_ssid_3,wifi_rssi_1,wifi_rssi_2,wifi_rssi_3,gps_lat,gps_lng
+201,2025-07-09T15:54:23.809676Z,,,,,,,,,,,,,,,,,,,,,,AP1,,,-40,0,0,41.4,2.2
+201,2025-07-09T15:54:41.285556Z,,,,,,,,,,,,,,,,,,,,,,AP1,,,-40,0,0,41.4,2.2
+201,2025-07-09T15:54:54.388121Z,,,,,,,,,,,,,,,,,,,,,,AP1,,,-40,0,0,41.4,2.2
