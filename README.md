@@ -1,66 +1,68 @@
-# Indoor Routing and Localization System
+---
+title: Indoor Routing and Localization System
+description: QR-code based hybrid indoor positioning using PDR and Wi-Fi fingerprinting
+---
 
-This project is part of my engineering internship at Universitat Oberta de Catalunya supervised by Dr.Perrez-Navarro. It aims to develop an indoor navigation system using QR codes and smartphone sensor data.
+# 🧭 Indoor Routing & Localization System
 
-## 🔍 Project Overview
+This project was developed during my engineering internship at the **Universitat Oberta de Catalunya**, under the supervision of **Dr. Pérez-Navarro**.  
+It aims to provide a lightweight, mobile-friendly **indoor navigation system** based on **QR codes**, **IMU sensors (PDR)**, and **Wi‑Fi fingerprinting**.
 
-The goal is to:
-- Generate QR codes for each office (rooms 201 to 225).
-- Stick these QR codes on doors to identify room positions.
-- When a user scans a QR code, a web page opens indicating:
-  - The current location (room scanned).
-  - A list of destination rooms.
-  - (In future versions) a route to the destination.
+<img src="diag.png" alt="System Architecture" style="max-width: 100%;">
 
-At this first stage, we focus on:
-- Sending an email when a QR is scanned.
-- Including available smartphone data (magnetometer, WiFi signal) in the email.
-- Formatting this data following the IPIN competition format.
+---
 
-## 📁 Project Structure
+## 🔍 Project Goals
 
+- Generate **QR codes** for each room (201 to 225) to be placed at the door.
+- Upon scanning a QR code:
+  - Open a web page showing the **current location**.
+  - Display a list of **available destinations**.
+  - (Coming soon) Show the **path to the destination**.
+- Continuously collect **mobile sensor data** (Wi‑Fi, magnetometer, accelerometer).
+- Compute indoor location by combining:
+  - **PDR** (Pedestrian Dead Reckoning).
+  - **Wi‑Fi fingerprinting** (kNN with stats).
+  - **Fusion filtering** (e.g., Kalman Filter).
+
+---
+
+## 🗂️ Project Structure
+
+```text
 project/
-├── qrcodes/ # generated QR codes (room_201.png … room_225.png)
-├── data/ # collected sensor data (sensor_data.json)
-├── qr_generator/ # QR code generation module
-│ └── generate_qr.py
-├── scripts/ # utility scripts
-│ ├── init.py
-│ ├── collect_sensor_data.py # collects data & sends email
-│ └── send_email.py # email sending via Mailtrap / SMTP
-├── web/ # Flask web application
-│ ├── init.py
-│ ├── app.py
-│ ├── templates/
-│ │ └── index.html # main page + form
-│ └── static/
-│ └── script.js # JS sensor collection & fetch
-├── main.py # entry point (QR generation + Flask server)
-├── config.py # .env parsing, paths, URLs
-├── requirements.txt # pip dependencies
-├── .env # environment variables (excluded from git)
-└── .gitignore # ignores venv/, qrcodes/, data/, etc.
-
-
-# 📝 TODO / Next Steps
-
-- **Enable HTTPS for mobile sensors**  
-  - Install and run **ngrok**:  
-    ```bash
-    ngrok http 5000
-    ```  
-  - Copy the generated HTTPS URL (e.g. `https://abcdef.ngrok.io`) into your `.env` as:  
-    ```dotenv
-    BASE_URL=https://abcdef.ngrok.io
-    ```  
-  - Regenerate your QR codes and re-test collection on iOS Safari.
-
-- **Add indoor routing functionality**  
-  1. Expose a new endpoint:  
-     ```
-     GET /route?from=<roomA>&to=<roomB>
-     ```  
-  2. Use pgRouting (`pgr_dijkstra` on your `indoor_lines` table) to compute the shortest path.  
-  3. Integrate a map library (Leaflet or OpenLayers) into `index.html` to display the route.  
-
-
+├── algorithms/             # Core positioning logic
+│   ├── pdr.py              # PDR trajectory from IMU
+│   ├── fingerprint.py      # Wi‑Fi kNN positioning
+│   ├── filters.py          # Fusion filters (e.g. Kalman)
+│   └── fusion.py           # Combines QR, PDR, Wi‑Fi
+│
+├── qr_generator/           
+│   └── generate_qr.py      # CLI for QR creation and parsing
+│
+├── web/                    
+│   ├── app.py              # Flask backend and routing
+│   ├── templates/          # HTML (Jinja2)
+│   └── static/             # JS (sensor logic), CSS, Leaflet
+│
+├── scripts/                
+│   ├── init_stats.py       # Generate Wi‑Fi baselines
+│   ├── record_realtime.py  # Collect live sensor data
+│   ├── geolocate.py        # CLI geolocation using fusion
+│   ├── send_email.py       # Alert/reporting system
+│   └── route.py            # GeoJSON + routing logic
+│
+├── data/
+│   ├── raw/                # Raw Wi‑Fi/IMU recordings
+│   ├── stats/              # Aggregated fingerprint baselines
+│   └── recordings/         # Live session recordings
+│
+├── main.py                 # Entry point (e.g. test script)
+├── diag.png                # System architecture diagram
+├── config.py               # Environment and path setup
+├── requirements.txt        # Python dependencies
+├── Dockerfile              # For containerized deployment
+├── .env                    # API keys and secrets
+├── .gitignore
+├── README.md
+└── roadmap.txt             # Development checklist

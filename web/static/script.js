@@ -1,8 +1,22 @@
 function collectSensorData() {
-    console.log("🔄 Fonction collectSensorData appelée");
+    console.log("🔄 Starting sensor data collection");
     
-    // Test de base pour voir si la fonction est appelée
-    alert("Bouton cliqué ! Début de la collecte...");
+    // Visual feedback
+    const statusDiv = document.createElement('div');
+    statusDiv.id = 'sensor-status';
+    statusDiv.style.position = 'fixed';
+    statusDiv.style.top = '20px';
+    statusDiv.style.right = '20px';
+    statusDiv.style.padding = '10px';
+    statusDiv.style.background = 'rgba(0,0,0,0.8)';
+    statusDiv.style.color = 'white';
+    statusDiv.style.borderRadius = '8px';
+    document.body.appendChild(statusDiv);
+    
+    const updateStatus = (message, color = 'white') => {
+        statusDiv.innerHTML = `📡 ${message}`;
+        statusDiv.style.color = color;
+    };
     
     // Vérification du support DeviceMotionEvent
     if (!window.DeviceMotionEvent) {
@@ -84,8 +98,43 @@ function startDataCollection() {
         window.removeEventListener('devicemotion', handleDeviceMotion);
     };
     
-    window.addEventListener('devicemotion', handleDeviceMotion);
-    alert("📱 Bougez légèrement votre téléphone pour activer les capteurs...");
+    // Continuous motion visualization
+    const motionCanvas = document.createElement('canvas');
+    motionCanvas.width = 100;
+    motionCanvas.height = 100;
+    motionCanvas.style.position = 'fixed';
+    motionCanvas.style.bottom = '20px';
+    motionCanvas.style.right = '20px';
+    motionCanvas.style.background = 'rgba(0,0,0,0.5)';
+    motionCanvas.style.borderRadius = '50%';
+    document.body.appendChild(motionCanvas);
+    const ctx = motionCanvas.getContext('2d');
+    
+    // Continuous data collection
+    let lastSend = 0;
+    window.addEventListener('devicemotion', (event) => {
+        const now = Date.now();
+        const accel = event.acceleration;
+        
+        // Update motion visualization
+        ctx.clearRect(0, 0, motionCanvas.width, motionCanvas.height);
+        if (accel) {
+            const dx = (accel.x || 0) * 3 + 50;
+            const dy = (accel.y || 0) * 3 + 50;
+            ctx.beginPath();
+            ctx.arc(dx, dy, 10, 0, Math.PI * 2);
+            ctx.fillStyle = '#4CAF50';
+            ctx.fill();
+        }
+        
+        // Throttle data sending to 1Hz
+        if (now - lastSend > 1000) {
+            handleDeviceMotion(event);
+            lastSend = now;
+        }
+    });
+    
+    updateStatus("Prêt à collecter les données", '#4CAF50');
 }
 
 function sendFallbackData() {
