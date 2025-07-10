@@ -8,7 +8,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
-from utils import extract_room, list_sensor_files, read_sensor_csv, RECORDINGS_DIR
+from project.scripts.utils import extract_room, list_sensor_files, read_sensor_csv, RECORDINGS_DIR
 
 def record_realtime(folder: Path, client_ip: str):
     room = extract_room(folder.name)

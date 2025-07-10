@@ -1,7 +1,7 @@
 import sys
 from config import config
 from qr_generator.generate_qr import generate_qr_codes
-from project.app import app
+from project.web.app import app
 
 def main():
     print("🚀 Indoor Navigation System starting...")

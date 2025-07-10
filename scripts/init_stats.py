@@ -7,7 +7,7 @@ Usage : python init_stats.py
 import argparse
 import pandas as pd
 from pathlib import Path
-from utils import extract_room, list_sensor_files, read_sensor_csv, calculate_stats, RAW_DATA_DIR, STATS_DIR
+from project.scripts.utils import extract_room, list_sensor_files, read_sensor_csv, calculate_stats, RAW_DATA_DIR, STATS_DIR
 
 def init_stats():
     if not RAW_DATA_DIR.exists():

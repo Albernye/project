@@ -1,3 +1,5 @@
+# This code is a copy of PDR.py from Louis Royet's project on Indoor Navigation System
+
 import pandas as pd
 import numpy as np
 import glob
@@ -5,121 +7,11 @@ import warnings
 import math
 import csv
 import matplotlib.pyplot as plt
-from scipy.signal import butter
 import scipy.linalg
-from sklearn.neighbors import KNeighborsRegressor 
-from bisect import bisect_right
 from scipy.signal import butter, filtfilt
 from scipy.linalg import expm
 
-
-def find_most_recent_index(timestamps, reference_time):
-    # Find the position where reference_time would fit
-    pos = bisect_right(timestamps, reference_time)
-
-    # If pos is 0, it means no valid timestamp exists
-    return pos - 1 if pos > 0 else None
-
-def euclidean_distance_3d(lon1, lat1, z1, lon2, lat2, z2):
-    """
-    Calculate the Euclidean distance between two points in 3D space
-    given their longitudes, latitudes in decimal degrees, and altitudes in meters.
-
-    Returns the distance in meters.
-    """
-    # Convert decimal degrees to radians
-    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
-    
-    # Earth radius in meters
-    radius_earth = 6371000
-    
-    # Convert spherical coordinates to Cartesian coordinates
-    x1 = radius_earth * math.cos(lat1) * math.cos(lon1)
-    y1 = radius_earth * math.cos(lat1) * math.sin(lon1)
-    z1 = z1  # altitude in meters
-    
-    x2 = radius_earth * math.cos(lat2) * math.cos(lon2)
-    y2 = radius_earth * math.cos(lat2) * math.sin(lon2)
-    z2 = z2  # altitude in meters
-    
-    # Calculate Euclidean distance in 3D
-    distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2 + (z2 - z1)**2)
-    
-    return distance
-
-
-def kalman_filter_predict1(xk_1, Pk_1, A, Q):
-    xk_pred = A @ xk_1 
-    Pk_pred = A @ Pk_1 @ A.T + Q
-    return xk_pred, Pk_pred
-
-def kalman_filter_predict2(xk_1, Pk_1, A, B, u, Q):
-    xk_pred = A @ xk_1 + B @ u
-    Pk_pred = A @ Pk_1 @ A.T + Q
-    return xk_pred, Pk_pred
-
-def kalman_filter_update(xk_pred, Pk_pred, zk, H, R):
-    Kk = Pk_pred @ H.T @ np.linalg.inv(H @ Pk_pred @ H.T + R)
-    xk = xk_pred + Kk @ (zk - H @ xk_pred)
-    Pk = (np.eye(len(Pk_pred)) - Kk @ H) @ Pk_pred
-    return xk, Pk
-
-def kalman_filter3d(stride_lengths, thetas, positions, q, r):
-    # State vector [x, y, theta]. Initial state assumed to be [0, 0, 0].
-    xk = np.array([0, 0, positions[0,0], 0])
-    Pk = np.eye(4)
-    
-    # State transition matrix
-    A = np.eye(4)
-    
-    # Measurement matrix
-    H = np.array([
-    [1, 0, 0, 0],
-    [0, 1, 0, 0],
-    [0, 0, 1, 0]
-    ])
-    
-    # Process noise covariance matrix
-    Q = np.eye(4)*q
-    
-    # Measurement noise covariance matrix
-    R = np.eye(3)*r
-    
-    estimated_positions = []
-    for k in range(len(positions)):
-        # Control input
-        L = stride_lengths[k]
-        delta_theta = thetas[k]
-        B = np.array([
-            [np.cos(xk[2]), 0],
-            [np.sin(xk[2]), 0],
-            [0, 0],
-            [0, 1]
-        ])
-        u = np.array([L, delta_theta])
-        
-        # Prediction step
-        xk_pred, Pk_pred = kalman_filter_predict2(xk, Pk, A, B, u, Q)
-        
-        # Update step
-        zk = positions[k]
-        xk, Pk = kalman_filter_update(xk_pred, Pk_pred, zk, H, R)
-        
-        # Store estimated position
-        estimated_positions.append(xk[:3])
-    
-    estimated_positions = np.array(estimated_positions)
-    return estimated_positions
-
-from scipy.signal import butter, filtfilt
-
-def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1, fp=None, timeFP=None, longFP=None, latFP=None, POSI_X=None, POSI_Y=None, ZIMU=None):
-    fps=np.zeros((1,fp.shape[1]))
-    XX=[]
-    YY=[]
-    ZZ=[]
-    long=[]
-    lat=[]
+def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
     # Calculate sample rate
     num_samples = len(magnitude)
     time_exp = time[-1] - time[0]
@@ -165,13 +57,7 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1, fp=None,
         if (Acc_filt_binary[ii] == -1 and Acc_filt_binary[ii - 1] == 0 and np.sum(Acc_filt_binary[ii - window:ii - 2]) > 1):
             StepDect[ii] = 1
             time_step.append(time[ii])
-            idx = find_most_recent_index(timeFP,time[ii])
-            fps=np.vstack((fps,fp[idx]))
-            long.append(longFP[idx][0])
-            lat.append(latFP[idx][0])
-            XX.append(POSI_X[ii][0])
-            YY.append(POSI_Y[ii][0])
-            ZZ.append(ZIMU[ii])
+            
             step_count += 1
             StanceBegins_idx.append(ii)
             
@@ -203,30 +89,8 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1, fp=None,
         plt.show()
     
     #print(time_step)
-    fps=fps[1:,:]
     
-    return Num_steps, StanceBegins_idx, StancePhase, fps, XX, YY, ZZ, long, lat
-
-def latlon_to_xy(latitude, longitude, origin_latitude, origin_longitude):
-    
-    # Radius of the Earth in meters
-    R = 6371000
-    
-    # Convert degrees to radians
-    lat_rad = math.radians(latitude)
-    lon_rad = math.radians(longitude)
-    origin_lat_rad = math.radians(origin_latitude)
-    origin_lon_rad = math.radians(origin_longitude)
-    
-    # Calculate differences
-    delta_lon = lon_rad - origin_lon_rad
-    delta_lat = lat_rad - origin_lat_rad
-    
-    # Calculate x, y using the planar approximation
-    x = delta_lon * math.cos(origin_lat_rad) * R
-    y = delta_lat * R
-    
-    return x, y
+    return Num_steps, StanceBegins_idx, StancePhase
 
 def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_phase, ver, idx_fig):
     # Constants
@@ -307,8 +171,7 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
             positions[k, 1] = positions[k - 1, 1] + stride_lengths[k] * np.sin(thetas[k])
     
     positions = np.vstack((np.array([0, 0]), positions))  # Adding initial position (0,0)
-       
-    
+
     # Plotting (if ver is True)
     if ver:
         #plt.figure(idx_fig)
@@ -322,9 +185,9 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
 
         plt.figure(idx_fig)
         plt.plot(positions[:, 0], positions[:, 1], 'bo-', label='Positions')
-        plt.plot(positions[0, 0], positions[0, 1], 'ys', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.plot(positions[-1, 0], positions[-1, 1], 'yo', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.title('SL + Theta: Positions of trajectories in the global coordinate frame (G)')
+        plt.plot(positions[0, 0], positions[0, 1], 'bs', markersize=8, markerfacecolor=[0, 0, 1])
+        plt.plot(positions[-1, 0], positions[-1, 1], 'bo', markersize=8, markerfacecolor=[0, 0, 1])
+        plt.title('Positions')
         plt.xlabel('East (m)')
         plt.ylabel('North (m)')
         plt.axis('equal')
@@ -333,115 +196,46 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
 
         plt.show()
 
-    return thetas, positions, stride_lengths
+    return thetas, positions
 
+def PDR(testfile):
+    test=pd.read_csv(testfile, delimiter=';')
+    Acc_Magn_temp = test[['ACCE_MOD']].values.tolist()
+    Gyr_Magn_temp = test[['GYRO_MOD']].values.tolist()
+    ACCE=test[['ACCE_X','ACCE_Y','ACCE_X']].values
+    GYRO=test[['GYRO_X','GYRO_Y','GYRO_X']].values
+    time_temp = test[['timestamp']].values.tolist()
+    POSI_X= test[['POSI_X']].values.tolist()
+    POSI_Y= test[['POSI_Y']].values.tolist()
 
-def KalmanFilter(IMUfile, FPfile, knntrainfile, q, r):
-    testIMU=pd.read_csv(IMUfile, delimiter=';')
-    testFP=pd.read_csv(FPfile, delimiter=';')
-
-    Acc_Magn_temp = testIMU[['MOD_ACCE']].values.tolist()
-    Gyr_Magn_temp = testIMU[['MOD_GYRO']].values.tolist()
-    ACCE=testIMU[['ACCE_X','ACCE_Y','ACCE_Z']].values
-    GYRO=testIMU[['GYRO_X','GYRO_Y','GYRO_Z']].values  # Fixed: was GYRO_X instead of GYRO_Z
-    time_temp = testIMU[['time']].values.tolist()
-    POSI_X= testIMU[['POSI_X']].values.tolist()
-    POSI_Y= testIMU[['POSI_Y']].values.tolist()
-    longIMU=testIMU[['long']].values.tolist()
-    latIMU=testIMU[['lat']].values.tolist()
-    ZIMUt=testIMU[['Z']].values.tolist()
-
-
-    longFP = testFP[['long']].values.tolist()
-    latFP = testFP[['lat']].values.tolist()
-    ZtFP=testFP[['Z']].values.tolist()
-    timeFParr=testFP[['time']].values.tolist()
-    fp=testFP.drop(columns=['time','long', 'lat','Z']).values
-    timeFP=[]
-    ZFP=[]
-    for i in range(len(timeFParr)):
-        timeFP.append(timeFParr[i][0])
-        ZFP.append(ZtFP[i][0])
-
-    
     Acc_Magn=[]
     Gyr_Magn=[]
-    ACCZ=[]
     time=[]
+    X=[]
+    Y=[]
 
     for i in range(len(Acc_Magn_temp)):
         Acc_Magn.append(Acc_Magn_temp[i][0])
         Gyr_Magn.append(Gyr_Magn_temp[i][0])
         time.append(time_temp[i][0])
-        ACCZ.append(ACCE[i,2])
+        X.append(POSI_X[i][0])
+        Y.append(POSI_Y[i][0])
 
 
     index_start=0
-    X = testIMU[['POSI_X']].values
+    X = test[['POSI_X']].values
     while X[index_start] == 0:
         index_start += 1
-    
+    print(index_start)
+
     ACCE=ACCE[index_start:]
     GYRO=GYRO[index_start:]
-    ACCZ=ACCZ[index_start:]
     time=time[index_start:]
     Acc_Magn=Acc_Magn[index_start:]
     Gyr_Magn=Gyr_Magn[index_start:]
-    POSI_X= POSI_X[index_start:]
-    POSI_Y= POSI_Y[index_start:]
-    longIMU= longIMU[index_start:]
-    latIMU = latIMU[index_start:]
-    ZIMUt = ZIMUt[index_start:]
 
-    origin_lat=latFP[0][0]
-    origin_lon=longFP[0][0]
+    a,Steps,Stance=step_detection_accelerometer(Acc_Magn, time, plot=False, fig_idx=1)
 
-    ZIMU= []
-    for i in range(len(ZIMUt)):
-        ZIMU.append(ZIMUt[i][0])
+    thetas, positions = weiberg_stride_length_heading_position(ACCE,GYRO,time,Steps,Stance,1,1)
 
-    # Pass the required parameters to step_detection_accelerometer
-    a, Steps, Stance, fps, XX, YY, ZZ, long, lat=step_detection_accelerometer(
-        Acc_Magn, time, plot=False, fig_idx=1, 
-        fp=fp, timeFP=timeFP, longFP=longFP, latFP=latFP, 
-        POSI_X=POSI_X, POSI_Y=POSI_Y, ZIMU=ZIMU
-    )
-    
-    thetas, positions, SL = weiberg_stride_length_heading_position(ACCE,GYRO,time,Steps,Stance,1,1)
-
-    k = 3
-        
-    knn = KNeighborsRegressor(n_neighbors=k)
-
-    train = pd.read_csv(knntrainfile, delimiter=';')
-                   
-    # Extract positions and RSSI values
-    POSI_train = train[['long','lat','Z']].values
-    RSSI_train = train.drop(columns=['long', 'lat','Z']).values
-
-    knn.fit(RSSI_train, POSI_train)
-
-    pred=knn.predict(fps)
-    predxy=[latlon_to_xy(pred[i,1],pred[i,0],origin_lat,origin_lon) for i in range(len(pred))]
-    predxy=np.hstack((np.array([predxy[i][0] for i in range(len(predxy))]).reshape(-1,1),np.array([predxy[i][1] for i in range(len(predxy))]).reshape(-1,1)))
-    predxyz=np.hstack((predxy,np.array([pred[i,2] for i in range(len(pred))]).reshape(-1,1)))
-
-    fusedkal=kalman_filter3d(SL, thetas, predxyz, q, r)
-
-    # Create a 3D plot
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plotting the data
-    ax.plot(fusedkal[:,0], fusedkal[:,1], fusedkal[:,2], color='y', marker='o', linestyle='-', linewidth=2, markersize=5)
-    # Labeling the axes
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-
-    # Title
-    ax.set_title('3D Plot of X, Y and Z')
-
-    # Show plot
-    plt.show()
+    return thetas, positions 
