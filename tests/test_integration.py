@@ -1,7 +1,7 @@
 import pytest
-from project.algorithms.filters import KalmanFilter
-from project.algorithms.fusion import fuse
-from project.scripts.enhanced_pdr import EnhancedPDR
+from algorithms.filters import KalmanFilter
+from algorithms.fusion import fuse
+from algorithms.PDR import PDR
 import numpy as np
 
 @pytest.fixture
@@ -10,7 +10,7 @@ def kalman():
 
 @pytest.fixture
 def pdr():
-    return EnhancedPDR()
+    return PDR()
 
 def test_kalman_reset(kalman):
     # Test QR reset functionality
@@ -51,7 +51,7 @@ def test_full_integration(kalman, pdr):
 
 def test_no_movement_case():
     # Test with no movement data
-    from project.algorithms.fusion import reset_kalman
+    from algorithms.fusion import reset_kalman
     reset_kalman()
     result = fuse(None, None, None)
     assert np.allclose(result, (0, 0, 0), atol=1e-3)

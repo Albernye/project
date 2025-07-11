@@ -1,8 +1,10 @@
 # This code fuses PDR and fingerprint positions using a Kalman filter
 
 from scripts.geolocate import get_latest_positions
-from project.algorithms.filters import KalmanFilter
+from algorithms.filters import KalmanFilter
 
+
+_kf = None
 
 def fuse(pdr_pos, finger_pos, qr_reset=None):
     """
@@ -11,22 +13,27 @@ def fuse(pdr_pos, finger_pos, qr_reset=None):
     - finger_pos : estimation absolue (Wi-Fi fingerprint)
     - qr_reset : position absolue de référence (QR code)
     """
-    kf = KalmanFilter()
+    global _kf
+    if _kf is None:
+        _kf = KalmanFilter()
 
     # Reset avec QR si présent
     if qr_reset:
-        kf.reset_state(qr_reset)
+        _kf.reset_state(qr_reset)
 
     # Mise à jour prédictive avec PDR
     if pdr_pos:
-        kf.predict(pdr_delta=pdr_pos)
+        _kf.predict(pdr_delta=pdr_pos)
 
     # Mise à jour corrective avec fingerprint
     if finger_pos:
-        kf.update(measurement=finger_pos)
+        _kf.update(measurement=finger_pos)
 
-    return kf.get_state()
+    return _kf.get_state()
 
+def reset_kalman():
+    global _kf
+    _kf = None
 
 if __name__ == '__main__':
     # Récupère les positions depuis geolocate.py

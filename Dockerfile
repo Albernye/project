@@ -19,9 +19,10 @@ RUN apk add --no-cache --virtual .build-deps gcc g++ python3-dev musl-dev postgr
 # Copiez d'abord les requirements pour bénéficier du cache Docker
 COPY requirements.txt .
 
-# Installez les dépendances Python
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Installez les dépendances Python avec cache pip
+RUN pip install --cache-dir=/tmp/pip-cache --upgrade pip && \
+    pip install --cache-dir=/tmp/pip-cache -r requirements.txt && \
+    rm -rf /tmp/pip-cache
 
 # Copiez l'application
 COPY . .
