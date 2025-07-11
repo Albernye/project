@@ -1,7 +1,7 @@
 # This code fuses PDR and fingerprint positions using a Kalman filter
 
-from scripts.geolocate import get_latest_positions
-from algorithms.filters import KalmanFilter
+from project.scripts.geolocate import get_latest_positions
+from project.algorithms.filters import KalmanFilter
 
 
 _kf = None
