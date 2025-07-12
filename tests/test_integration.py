@@ -1,8 +1,8 @@
 import pytest
 import numpy as np
-from project.algorithms.filters import KalmanFilter
-from project.algorithms.fusion import fuse
-from project.algorithms.PDR import PDR
+from algorithms.filters import KalmanFilter
+from algorithms.fusion import fuse
+from algorithms.PDR import PDR
 import pandas as pd
 
 @pytest.fixture

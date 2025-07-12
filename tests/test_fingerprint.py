@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import patch
-from project.algorithms.fingerprint import euclidean_distance, fingerprint
+from algorithms.fingerprint import euclidean_distance, fingerprint
 
 def test_euclidean_distance():
     # Coordonnées de test (longitude, latitude)
