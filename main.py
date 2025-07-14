@@ -1,5 +1,6 @@
 import sys
 from config import config
+from project.algorithms.PDR import PDR
 from qr_generator.generate_qr import generate_qr_codes
 from project.web.app import app
 

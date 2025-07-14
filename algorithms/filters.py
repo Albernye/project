@@ -22,6 +22,8 @@ class KalmanFilter:
         self.R = R if R is not None else np.eye(self.dim) * 2.0
         # Measurement matrix (identity)
         self.H = np.eye(self.dim)
+        # Angular velocity for rotation compensation
+        self.omega = 0.5  # Default value for floor transition
 
     def reset_state(self, position):
         """
@@ -36,8 +38,20 @@ class KalmanFilter:
         Prediction step: incorporate PDR delta movement.
         pdr_delta: tuple or list (dx, dy, dfloor)
         """
-        # State prediction: x = x_prev + delta
-        delta = np.array(pdr_delta, dtype=float).reshape((self.dim, 1))
+        # Apply rotation compensation for floor transitions
+        dx, dy, dfloor = pdr_delta
+        if dfloor != 0:
+            # Adjust movement for spiral staircase rotation
+            theta = self.omega * dfloor
+            rot_matrix = np.array([
+                [np.cos(theta), -np.sin(theta), 0],
+                [np.sin(theta), np.cos(theta), 0],
+                [0, 0, 1]
+            ])
+            rotated_delta = rot_matrix @ np.array([dx, dy, dfloor])
+            dx, dy, dfloor = rotated_delta
+
+        delta = np.array([dx, dy, dfloor], dtype=float).reshape((self.dim, 1))
         self.x = self.x + delta
         # Covariance prediction: P = P + Q
         self.P = self.P + self.Q
