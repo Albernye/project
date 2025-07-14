@@ -1,8 +1,8 @@
 """
-Graphs building script for corridor management in a building layout.
-This script reads room positions from a CSV file, groups them by corridors based on their Y coordinates,
-and builds a graph structure representing the corridors and their connections to rooms.
-It also provides functionality to save and load the graph in JSON format for later use.
+Graphs builder script for corridor management in a building layout.
+This script reads room positions from a CSV file, groups them into corridors,
+and builds a graph structure representing the corridors and their connections.
+It also saves the graph to a JSON file for later use.
 """
 
 import pandas as pd
@@ -69,6 +69,30 @@ def create_corridor_nodes(corridors):
     
     return corridor_nodes
 
+def connect_nearby_rooms(graph, room_positions, max_distance=0.01):
+    """
+    Connecte directement les salles qui sont très proches les unes des autres.
+    
+    Args:
+        graph: Graphe existant
+        room_positions: Positions des salles
+        max_distance: Distance maximale pour considérer deux salles comme adjacentes
+    """
+    rooms = list(room_positions.keys())
+    
+    for i, room1 in enumerate(rooms):
+        for j, room2 in enumerate(rooms[i+1:], i+1):
+            x1, y1 = room_positions[room1]
+            x2, y2 = room_positions[room2]
+            
+            dist = euclidean(x1, y1, x2, y2)
+            
+            # Si les salles sont très proches, les connecter directement
+            if dist <= max_distance:
+                graph[room1].append((room2, dist))
+                graph[room2].append((room1, dist))
+                print(f"Connexion directe ajoutée: {room1} ↔ {room2} ({dist:.4f}m)")
+
 def build_graph(room_csv_path):
     """
     Construit le graphe des couloirs à partir d'un fichier CSV.
@@ -118,9 +142,8 @@ def build_graph(room_csv_path):
             # Stocker la position de la salle
             room_positions[room] = (room_x, room_y)
     
-    # Connecter les différents couloirs (jonctions)
-    # TODO: Ajouter la logique pour connecter les couloirs entre eux
-    # Pour l'instant, on suppose qu'ils ne sont pas connectés
+    # Connecter les salles très proches directement (comme 2-19 et 2-20)
+    connect_nearby_rooms(graph, room_positions, max_distance=0.01)
     
     return dict(graph), room_positions, corridor_structure
 
