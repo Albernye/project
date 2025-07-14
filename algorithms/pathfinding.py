@@ -181,9 +181,30 @@ def load_pathfinder_from_json(json_path: str) -> PathFinder:
 
 if __name__ == "__main__":
     import os
+    import sys
     
-    # Charger le graphe depuis le JSON
-    json_path = os.path.join(os.path.dirname(__file__), '../data/corridor_graph.json')
+    # Charger le graphe depuis le JSON (plusieurs possibilités)
+    possible_paths = [
+        os.path.join(os.path.dirname(__file__), '../data/corridor_graph.json'),
+        os.path.join(os.getcwd(), 'data/corridor_graph.json'),
+        'data/corridor_graph.json',
+        '../data/corridor_graph.json'
+    ]
+    
+    json_path = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            json_path = path
+            break
+    
+    if json_path is None:
+        print("❌ Fichier corridor_graph.json non trouvé dans les emplacements suivants:")
+        for path in possible_paths:
+            print(f"  - {os.path.abspath(path)}")
+        print("\nExécutez d'abord graph_builder.py pour créer le graphe.")
+        sys.exit(1)
+    
+    print(f"📁 Utilisation du fichier: {os.path.abspath(json_path)}")
     
     try:
         pathfinder = load_pathfinder_from_json(json_path)

@@ -3,7 +3,7 @@ Interactive tool to digitize coordinates from a floor plan image.
 
 Usage:
     python digitize_plan.py --image path/to/plan.png \
-        --ref <lat> <long>
+        --ref "<lat1,long1>" "<lat2,long2>"
 
 The `--ref` flag takes two real-world points (in meters) corresponding
 to the first two clicks you make on the image.

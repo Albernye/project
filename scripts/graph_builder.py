@@ -1,14 +1,14 @@
 """
-Graphs builder script for corridor management in a building layout.
-This script reads room positions from a CSV file, groups them into corridors,
-and builds a graph structure representing the corridors and their connections.
-It also saves the graph to a JSON file for later use.
+Constructeur de graphe de couloirs à partir des positions des salles.
+Ce module lit les positions des salles depuis un CSV et construit un graphe
+représentant la topologie des couloirs d'un bâtiment.
 """
 
 import pandas as pd
 import math
 import os
 import json
+import sys
 from collections import defaultdict
 
 def euclidean(x1, y1, x2, y2):
@@ -182,8 +182,28 @@ def load_graph_from_json(json_path):
     return data['graph'], data['room_positions'], data['corridor_structure']
 
 if __name__ == "__main__":
-    # Chemin vers le fichier CSV
-    csv_path = os.path.join(os.path.dirname(__file__), '../data/room_positions.csv')
+    # Chemin vers le fichier CSV (plusieurs possibilités)
+    possible_csv_paths = [
+        os.path.join(os.path.dirname(__file__), '../data/room_positions.csv'),
+        os.path.join(os.getcwd(), 'data/room_positions.csv'),
+        'data/room_positions.csv',
+        '../data/room_positions.csv'
+    ]
+    
+    csv_path = None
+    for path in possible_csv_paths:
+        if os.path.exists(path):
+            csv_path = path
+            break
+    
+    if csv_path is None:
+        print("❌ Fichier room_positions.csv non trouvé dans les emplacements suivants:")
+        for path in possible_csv_paths:
+            print(f"  - {os.path.abspath(path)}")
+        print("\nCréez d'abord le fichier CSV avec les positions des salles.")
+        sys.exit(1)
+    
+    print(f"📁 Utilisation du fichier CSV: {os.path.abspath(csv_path)}")
     
     # Construire le graphe
     graph, room_positions, corridor_structure = build_graph(csv_path)
@@ -201,7 +221,10 @@ if __name__ == "__main__":
         print(f"  Nombre de salles: {len(info['rooms'])}")
         print(f"  Salles: {[room[0] for room in info['rooms']]}")
     
+    # Déterminer le chemin de sauvegarde
+    output_dir = os.path.dirname(csv_path)
+    output_path = os.path.join(output_dir, 'corridor_graph.json')
+    
     # Sauvegarder le graphe
-    output_path = os.path.join(os.path.dirname(__file__), '../data/corridor_graph.json')
     save_graph_to_json(graph, room_positions, corridor_structure, output_path)
-    print(f"\nGraphe sauvegardé dans: {output_path}")
+    print(f"\n✅ Graphe sauvegardé dans: {os.path.abspath(output_path)}")
