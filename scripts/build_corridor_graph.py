@@ -1,3 +1,7 @@
+' This script builds a corridor graph from room positions and visualizes it using NetworkX and Matplotlib.'
+# It reads room positions from a CSV file, calculates distances, and constructs a graph representation.
+# The graph is then visualized with nodes representing rooms and corridor points.'
+
 import pandas as pd
 import math
 import os
