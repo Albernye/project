@@ -16,28 +16,16 @@ from pathlib import Path
 from typing import List, Optional
 from dataclasses import dataclass
 
-from utils import (
+from scripts.sensors import (
     extract_room,
     list_sensor_files,
     read_sensor_csv,
     calculate_stats,
     merge_sensor_data,
     add_room_geo,
-    RAW_DIR,
-    STATS_DIR,
 )
+from scripts.utils import cfg
 
-# Configuration
-@dataclass
-class Config:
-    """Configuration centralisée pour l'initialisation des stats"""
-    MIN_ROWS_REQUIRED: int = 10
-    ROOM_PREFIX: str = "2-"
-    PROCESSED_SUBDIR: str = "processed"
-    STATS_SUBDIR: str = "stats"
-    GLOBAL_TRAIN_FILE: str = "knn_train.csv"
-
-config = Config()
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """Configure le logging avec format cohérent"""
@@ -53,9 +41,9 @@ def validate_sensor_data(df: pd.DataFrame, filename: str) -> bool:
     """Valide les données d'un capteur"""
     if df is None or df.empty:
         return False
-    
-    if len(df) < config.MIN_ROWS_REQUIRED:
-        logging.warning(f"File {filename} has only {len(df)} rows (min: {config.MIN_ROWS_REQUIRED})")
+
+    if len(df) < cfg.MIN_ROWS:
+        logging.warning(f"File {filename} has only {len(df)} rows (min: {cfg.MIN_ROWS})")
         return False
     
     # Vérifications additionnelles selon vos besoins
@@ -132,7 +120,7 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
         stats = calculate_stats(all_df)
         
         if not stats.empty:
-            out_stats = STATS_DIR / f"room_{room}.csv"
+            out_stats = cfg.STATS_DIR / f"room_{room}.csv"
             stats.to_csv(out_stats, index=False)
             logger.info(f"Stats: {out_stats}")
         else:
@@ -141,8 +129,7 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
         return True
         
     except Exception as e:
-        logger.error(f"Error processing room {room}: {e}")
-        return False
+        logger.error(f"Error processing room {room}: {e}", exc_info=True)
 
 def build_global_training_set() -> bool:
     """
@@ -153,9 +140,9 @@ def build_global_training_set() -> bool:
     """
     logger = logging.getLogger(__name__)
     logger.info("Building global kNN training set...")
-    
-    stat_files = sorted(STATS_DIR.glob("room_*.csv"))
-    
+
+    stat_files = sorted(cfg.STATS_DIR.glob("room_*.csv"))
+
     if not stat_files:
         logger.error("No per-room stats found, knn_train.csv skipped")
         return False
@@ -195,7 +182,7 @@ def build_global_training_set() -> bool:
         df_knn = pd.concat(harmonized_dfs, ignore_index=True)
         
         # Sauvegarde
-        out_knn = STATS_DIR / config.GLOBAL_TRAIN_FILE
+        out_knn = cfg.STATS_DIR / cfg.GLOBAL_TRAIN_FILE
         df_knn.to_csv(out_knn, index=False)
         
         logger.info(f"Global training file: {out_knn} ({len(df_knn)} rows, {len(all_columns)} columns)")
@@ -215,16 +202,16 @@ def init_stats(verbose: bool = False) -> None:
     logger = setup_logging(verbose)
     
     # Préparation des dossiers
-    processed_dir = RAW_DIR.parent / config.PROCESSED_SUBDIR
+    processed_dir = cfg.PROCESSED_DIR
     processed_dir.mkdir(exist_ok=True, parents=True)
-    STATS_DIR.mkdir(exist_ok=True, parents=True)
-    
+    cfg.STATS_DIR.mkdir(exist_ok=True, parents=True)
+
     # Traitement des salles
     processed_rooms = []
     total_folders = 0
 
-    for folder in sorted(RAW_DIR.iterdir()):
-        if not folder.is_dir() or not folder.name.startswith(config.ROOM_PREFIX):
+    for folder in sorted(cfg.RAW_DIR.iterdir()):
+        if not folder.is_dir() or not folder.name.startswith(cfg.ROOM_PREFIX):
             continue
             
         total_folders += 1

@@ -19,10 +19,12 @@ def fuse(pdr_pos, finger_pos, qr_reset=None):
 
     # Reset avec QR si présent
     if qr_reset:
+        print(f"Resetting Kalman filter with position: {qr_reset}")
         _kf.reset_state(qr_reset)
 
     # Mise à jour prédictive avec PDR
     if pdr_pos:
+        print(f"Applying PDR delta: {pdr_pos}")
         _kf.predict(pdr_delta=pdr_pos)
 
     # Mise à jour corrective avec fingerprint

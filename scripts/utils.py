@@ -4,7 +4,7 @@ Fonctions partagées et configuration des chemins - Version adaptée aux formats
 import json
 import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone 
 from typing import List, Any, Dict, Optional
 import pandas as pd
 import numpy as np
@@ -95,7 +95,7 @@ def write_json_safe(obj: Any, path: Path):
 # =============================================================================
 def default_pdr_row() -> Dict[str, Any]:
     return {
-        "timestamp": datetime.utcnow().isoformat()+"Z",
+        "timestamp": datetime.now(timezone.utc).isoformat()+"Z",
         "POSI_X":    cfg.DEFAULT_POSXY[0],
         "POSI_Y":    cfg.DEFAULT_POSXY[1],
         "floor":     cfg.DEFAULT_FLOOR

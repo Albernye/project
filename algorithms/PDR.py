@@ -130,7 +130,7 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
 
     # Step 4: Heading direction (Thetas) after each step
     # Initialize rotation matrix at initial sample
-    w = np.arange(0, np.ceil(20 * freq_acc), dtype=int)  # Window for initial rest assumption
+    w = np.arange(0,min(np.ceil(20 * freq_acc), acc.shape[0]), dtype=int)  # Window for initial rest assumption
     acc_mean = np.mean(acc[w, :], axis=0)
     roll_ini = np.arctan2(acc_mean[1], acc_mean[2]) * 180 / np.pi
     pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2)) * 180 / np.pi

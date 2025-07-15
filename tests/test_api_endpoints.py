@@ -1,11 +1,10 @@
-import pytest
-from flask import Flask
-import json
-import os
 import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# Ajoute le chemin du projet pour l'import de app
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'web')))
+import pytest
+import json
+from unittest.mock import patch
 from web.app import app as flask_app
 
 @pytest.fixture
@@ -15,10 +14,11 @@ def client():
         yield client
 
 def test_position(client):
-    resp = client.get('/position')
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert 'position' in data
+    with patch("web.app.get_latest_positions", return_value=((1.0, 2.0, 0.0), (1.0, 2.0, 0.0), (1.0, 2.0, 0.0))):
+        resp = client.get('/position')
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert 'position' in data
 
 def test_route(client):
     resp = client.get('/route?from=201&to=202')
@@ -47,5 +47,7 @@ def test_confirm_position(client):
     payload = {"room": "201", "position": [41.406, 2.195]}
     resp = client.post('/confirm_position', data=json.dumps(payload), content_type='application/json')
     assert resp.status_code == 200
+    data = resp.get_json()
+    assert data['status'] == 'success'
     data = resp.get_json()
     assert data['status'] == 'success'

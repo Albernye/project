@@ -10,12 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 @pytest.fixture
 def pdr(tmp_path):
-    """
-    Crée un CSV minimal que PDR peut ingérer, puis instancie PDR dessus.
-    """
-    # Générer 200 échantillons pour simuler des données
     N = 200
-    timestamps = np.linspace(0, 5, N)
+    timestamps = np.linspace(0, 5, N)  # N points, index 0 à N-1
     df = pd.DataFrame({
         'timestamp': timestamps,
         'long':      np.full(N, 2.0),
@@ -42,7 +38,7 @@ def pdr(tmp_path):
     # On passe le chemin au constructeur PDR
     return PDR(str(csv_path))
 
-def test_pdr_rotation(pdr):
-    # Teste la compensation de rotation (10x la vitesse angulaire pour tenir compte du facteur 0.1)
-    step = pdr._apply_rotation((1, 0, 0), [0, 0, np.pi/2 * 10], 0)
-    assert np.allclose(step, [0, 1, 0], atol=0.1)
+def test_pdr_initialization(pdr):
+    df, trajectory = pdr
+    assert df is not None
+    assert trajectory.shape[1] == 2

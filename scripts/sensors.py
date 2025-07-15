@@ -6,7 +6,7 @@ calculate statistics, merge sensor data, and add geographical information to the
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from scripts.utils import SENSOR_MAPPING, UNCALIBRATED_SUFFIX, get_logger; get_room_position = get_logger
+from scripts.utils import SENSOR_MAPPING, UNCALIBRATED_SUFFIX, get_logger,get_room_position
 
 logger = get_logger(__name__)
 
@@ -201,8 +201,8 @@ def merge_sensor_data(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     merged = merged.sort_index()
     
     # Interpolation et remplissage des valeurs manquantes
-    merged = merged.interpolate(method='index').fillna(method='ffill').fillna(method='bfill')
-    
+    merged = merged.interpolate(method='index').ffill().bfill()
+
     # Reset index et garder le timestamp
     merged = merged.reset_index()
     merged = merged.rename(columns={'timestamp': 'timestamp'})

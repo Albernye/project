@@ -2,6 +2,7 @@ import sys
 import os
 import logging
 from pathlib import Path
+from datetime import datetime, timezone
 
 # Ajouter le répertoire racine au PYTHONPATH
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, render_template, request, jsonify
 import json
 import csv
-from datetime import datetime
+
 from scripts.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from scripts.record_realtime import record_realtime
@@ -101,7 +102,7 @@ def get_position():
             
         return jsonify({
             "position": pos_list,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "sources": {
                 "pdr": pdr_pos is not None,
                 "fingerprint": finger_pos is not None,
@@ -114,7 +115,7 @@ def get_position():
         return jsonify({
             "error": str(e),
             "position": [0.0, 0.0],
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }), 500
 
 @app.route('/route')
@@ -247,7 +248,7 @@ def collect_sensor_data_route():
                                 reading.get('x', 0.0),
                                 reading.get('y', 0.0),
                                 reading.get('z', 0.0),
-                                datetime.utcnow().isoformat() + 'Z'
+                                datetime.now(timezone.utc).isoformat() + 'Z'
                             ])
 
         # Traitement des données en temps réel
@@ -409,7 +410,7 @@ def health_check():
     """Endpoint de santé pour vérifier le statut du système"""
     return jsonify({
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "pathfinder_available": pathfinder is not None,
         "corridor_data_loaded": corridor_data is not None
     })

@@ -20,25 +20,29 @@ def test_euclidean_distance():
 def test_fingerprint_predictions():
     knntrainfile = "dummy_knntrainfile.csv"
     FPfile = "dummy_FPfile.csv"
-    kP, kZ, R = 3, 3, 5.0
+    kP, kZ, R = 2, 2, 5.0  
 
-    # Mock des données pour éviter de lire les fichiers pendant le test
+    # Mock data to avoid reading files during test
     mock_train_data = pd.DataFrame({
+        'rssi1': [-50, -55],
+        'rssi2': [-60, -65],
         'long': [11.111628329564, 11.111567743893],
         'lat': [49.461219385271, 49.46132292478],
-        'Z': [0, 1],
-        'rssi1': [-50, -55],
-        'rssi2': [-60, -65]
+        'Z': [0, 1]
     })
 
     mock_fp_data = pd.DataFrame({
+        'time': [0],
         'rssi1': [-52],
-        'rssi2': [-62]
+        'rssi2': [-62],
+        'long': [11.111628329564],
+        'lat': [49.461219385271],
+        'Z': [0]
     })
 
-    # Utilisation du mock pour simuler la lecture des fichiers CSV
-    with patch('pandas.read_csv', side_effect=[mock_train_data, mock_fp_data]):
+    # Use mock to simulate reading CSV files
+    with patch('pandas.read_csv', side_effect=[mock_fp_data, mock_train_data]):
         predictions = fingerprint(knntrainfile, FPfile, kP, kZ, R)
-        # Vérification du format des prédictions
+        # Check the shape of predictions
         assert predictions.shape[1] == 3  # long, lat, Z
-        assert predictions.shape[0] == 1  # Selon mock_fp_data
+        assert predictions.shape[0] == 1  # According to mock_fp_data

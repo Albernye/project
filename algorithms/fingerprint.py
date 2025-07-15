@@ -48,17 +48,25 @@ def euclidean_distance(lon1, lat1, lon2, lat2):
 
 def fingerprint(knntrainfile, FPfile, kP, kZ, R):
 
-    fps=pd.read_csv(FPfile, delimiter=';')
-    fps=fps.values
+    # Lecture unique du fichier FP
+    fps = pd.read_csv(FPfile, delimiter=';')
+    rssi_cols = [c for c in fps.columns if c.startswith('rssi')]
+    
+    train = pd.read_csv(knntrainfile, delimiter=';')
+    train_rssi_cols = [c for c in train.columns if c.startswith('rssi')]
+    
+    # Prendre l'intersection des colonnes RSSI
+    common_cols = list(set(rssi_cols) & set(train_rssi_cols))
+    common_cols.sort()  # Assurer l'ordre cohérent
+    
+    fps = fps[common_cols].values
 
     knnP = KNeighborsRegressor(n_neighbors=kP)
     knnZ = KNeighborsRegressor(n_neighbors=kZ)
 
-    train = pd.read_csv(knntrainfile, delimiter=';')
-
     POSI_train = train[['long','lat']].values
     Z_train = train[['Z']].values
-    RSSI_train = train.drop(columns=['time','long', 'lat','Z']).values
+    RSSI_train = train[common_cols].values
 
     knnP.fit(RSSI_train, POSI_train)
     knnZ.fit(RSSI_train, Z_train)
@@ -98,4 +106,3 @@ def fingerprint(knntrainfile, FPfile, kP, kZ, R):
     plt.show()
 
     return pred
-
