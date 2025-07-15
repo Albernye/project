@@ -21,6 +21,7 @@ def fuse(pdr_pos, finger_pos, qr_reset=None):
     if qr_reset:
         print(f"Resetting Kalman filter with position: {qr_reset}")
         _kf.reset_state(qr_reset)
+        return _kf.get_state()
 
     # Mise à jour prédictive avec PDR
     if pdr_pos:

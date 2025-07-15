@@ -2,9 +2,7 @@ from pathlib import Path
 from algorithms.fingerprint import fingerprint
 from algorithms.PDR import PDR
 from algorithms.filters import KalmanFilter
-from scripts.utils import (cfg, get_logger, read_csv_safe, write_csv_safe,
-                           read_json_safe, write_json_safe, default_pdr_row,
-                           default_fingerprint_row, default_qr_event)
+from scripts.utils import (cfg, read_json_safe)
 
 
 def setup_paths():

@@ -108,22 +108,31 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
     num_samples_gyr = gyr.shape[0]
     freq_gyr = np.ceil(num_samples_gyr / time_exp)
     
-    
+    if num_samples_acc != num_samples_gyr:
+        print(f"Warning: Different sample counts - ACC: {num_samples_acc}, GYR: {num_samples_gyr}")
+        min_samples = min(num_samples_acc, num_samples_gyr)
+        acc = acc[:min_samples]
+        gyr = gyr[:min_samples]
+        num_samples_acc = min_samples
+        num_samples_gyr = min_samples
 
     # Step 1: Magnitude of accelerometer data
     m_acc = np.sqrt(acc[:, 0]**2 + acc[:, 1]**2 + acc[:, 2]**2)
 
     # Step 2: Low-pass filter
     cutoff_freq = 3  # Hz
-    b, a = butter(4, cutoff_freq / freq_acc, btype='low')
+    b, a = butter(4, cutoff_freq / (0.5 * freq_acc), btype='low')
     m_acc = filtfilt(b, a, m_acc)
 
     # Step 3: Weiberg's algorithm for stride length estimation
     stride_lengths = []
     for i in range(len(step_event)):
         sample_step_event = step_event[i]
-        acc_max = np.max(m_acc[:sample_step_event])
-        acc_min = np.min(m_acc[:sample_step_event])
+
+        window_start = max(0, sample_step_event - 10)
+        window_end = min(len(m_acc), sample_step_event + 10)
+        acc_max = np.max(m_acc[window_start:window_end])
+        acc_min = np.min(m_acc[window_start:window_end])
         bounce = (acc_max - acc_min)**(1/4)
         stride_length = bounce * K * 2
         stride_lengths.append(stride_length)
@@ -132,33 +141,43 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
     # Initialize rotation matrix at initial sample
     w = np.arange(0,min(np.ceil(20 * freq_acc), acc.shape[0]), dtype=int)  # Window for initial rest assumption
     acc_mean = np.mean(acc[w, :], axis=0)
-    roll_ini = np.arctan2(acc_mean[1], acc_mean[2]) * 180 / np.pi
-    pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2)) * 180 / np.pi
+    
+    roll_ini = np.arctan2(acc_mean[1], acc_mean[2])
+    pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2))
     yaw_ini = 0
-    rot_gs = np.zeros((3, 3, num_samples_acc))
-    rot_z = np.array([[np.cos(yaw_ini*np.pi/180), -np.sin(yaw_ini*np.pi/180), 0],
-                      [np.sin(yaw_ini*np.pi/180), np.cos(yaw_ini*np.pi/180), 0],
-                      [0, 0, 1]])
-    rot_y = np.array([[np.cos(pitch_ini*np.pi/180), 0, np.sin(pitch_ini*np.pi/180)],
-                      [0, 1, 0],
-                      [-np.sin(pitch_ini*np.pi/180), 0, np.cos(pitch_ini*np.pi/180)]])
-    rot_x = np.array([[1, 0, 0],
-                      [0, np.cos(roll_ini*np.pi/180), -np.sin(roll_ini*np.pi/180)],
-                      [0, np.sin(roll_ini*np.pi/180), np.cos(roll_ini*np.pi/180)]])
-    rot_gs[:, :, 0] = np.dot(rot_z, np.dot(rot_y, rot_x))
 
+    rot_gs = np.zeros((3, 3, num_samples_acc))
+    
+    rot_z = np.array([[np.cos(yaw_ini), -np.sin(yaw_ini), 0],
+                      [np.sin(yaw_ini), np.cos(yaw_ini), 0],
+                      [0, 0, 1]])
+    rot_y = np.array([[np.cos(pitch_ini), 0, np.sin(pitch_ini)],
+                      [0, 1, 0],
+                      [-np.sin(pitch_ini), 0, np.cos(pitch_ini)]])
+    rot_x = np.array([[1, 0, 0],
+                      [0, np.cos(roll_ini), -np.sin(roll_ini)],
+                      [0, np.sin(roll_ini), np.cos(roll_ini)]])
+    
+    rot_gs[:, :, 0] = np.dot(np.dot(rot_z, rot_y), rot_x)
+
+    dt = 1.0/freq_gyr
     # Propagate rotation matrix to all samples using gyroscope data
     for i in range(1, num_samples_gyr):
-        skew_gyros = np.array([[0, -gyr[i, 2], gyr[i, 1]],
-                               [gyr[i, 2], 0, -gyr[i, 0]],
-                               [-gyr[i, 1], gyr[i, 0], 0]])  # Skew-symmetric matrix
-        rot_gs[:, :, i] = np.dot(rot_gs[:, :, i - 1], expm(skew_gyros / freq_gyr))  # Using matrix exponential
+        gyr_rad = gyr[i, :] * np.pi / 180 if np.max(np.abs(gyr[i,:])) > 10 else gyr[i, :]
+        
+        skew_gyros = np.array([[0, -gyr_rad[2], gyr_rad[1]],
+                               [gyr_rad[2], 0, -gyr_rad[0]],
+                               [-gyr_rad[1], gyr_rad[0], 0]])
+        
+        rot_gs[:, :, i] = np.dot(rot_gs[:, :, i - 1], expm(skew_gyros * dt))  # Using matrix exponential
 
     # Calculate heading direction (Thetas)
     thetas = np.zeros(len(step_event))
-    step_event_gyro = np.floor(np.array(step_event) * freq_gyr / freq_acc).astype(int)
+    step_event_gyro = np.clip(np.floor(np.array(step_event) * freq_gyr / freq_acc).astype(int), 0, num_samples_gyr - 1)
+
     for k in range(len(step_event)):
-        thetas[k] = np.arctan2(rot_gs[1, 0, step_event_gyro[k]], rot_gs[0, 0, step_event_gyro[k]])
+        idx = step_event_gyro[k]
+        thetas[k] = np.arctan2(rot_gs[1, 0, idx], rot_gs[0, 0, idx])
 
     # Step 5: Positions after integration (PDR results)
     positions = np.zeros((len(step_event), 2))
@@ -200,10 +219,12 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
 
 def PDR(testfile):
     test=pd.read_csv(testfile, delimiter=';')
+
     Acc_Magn_temp = test[['ACCE_MOD']].values.tolist()
     Gyr_Magn_temp = test[['GYRO_MOD']].values.tolist()
-    ACCE=test[['ACCE_X','ACCE_Y','ACCE_X']].values
-    GYRO=test[['GYRO_X','GYRO_Y','GYRO_X']].values
+    
+    ACCE=test[['ACCE_X','ACCE_Y','ACCE_Z']].values
+    GYRO=test[['GYRO_X','GYRO_Y','GYRO_Z']].values
     time_temp = test[['timestamp']].values.tolist()
     POSI_X= test[['POSI_X']].values.tolist()
     POSI_Y= test[['POSI_Y']].values.tolist()
