@@ -185,10 +185,10 @@ if __name__ == "__main__":
     
     # Charger le graphe depuis le JSON (plusieurs possibilités)
     possible_paths = [
-        os.path.join(os.path.dirname(__file__), '../data/corridor_graph.json'),
-        os.path.join(os.getcwd(), 'data/corridor_graph.json'),
-        'data/corridor_graph.json',
-        '../data/corridor_graph.json'
+        os.path.join(os.path.dirname(__file__), '../data/graph/corridor_graph.json'),
+        os.path.join(os.getcwd(), 'data/graph/corridor_graph.json'),
+        'data/graph/corridor_graph.json',
+        '../data/graph/corridor_graph.json'
     ]
     
     json_path = None

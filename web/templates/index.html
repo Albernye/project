@@ -1,33 +1,22 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Indoor Navigation</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <style>
-    body, html { margin:0; padding:0; height:100%; }
-    #map { height: 100%; width: 100%; }
-    .control-panel {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,255,255,0.9);
-      padding: 10px;
-      border-radius: 8px;
-      z-index: 1000;
-    }
-  </style>
-</head>
-<body>
-  <div class="control-panel">
-    <label for="destSelect">Destination:</label>
-    <select id="destSelect"></select>
-    <button id="goBtn">Go</button>
-  </div>
-  <div id="map"></div>
+{% extends "base.html" %}
+{% block title %}Position - {{ room }}{% endblock %}
+{% block content %}
+<div class="map-container">
+  <div id="map" data-room="{{ room }}"></div>
+  <div class="controls">
+    <h2>Room {{ room }}</h2>
+    <p>Update: <span id="timestamp">–</span></p>
+    <p>Coords: <span id="coordinates">–</span></p>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="/static/leaflet.js"></script>
-</body>
-</html>
+    <select id="destSelect">
+      <option value="">-- Salle --</option>
+      {% for n in range(201,226) %}
+        <option value="{{ n }}">{{ n }}</option>
+      {% endfor %}
+    </select>
+    <button id="goBtn">Route</button>
+    <button id="recalibrate">Recalibrate</button>
+    <button onclick="collectSensorData()">Start Nav</button>
+  </div>
+</div>
+{% endblock %}

@@ -1,5 +1,0 @@
-sensor_type,x,y,z,timestamp,room,client_ip
-accelerometer,0.1,0.2,0.0,20250709_155441,201,
-gyroscope,1.0,0.5,-0.2,20250709_155441,201,
-magnetometer,10,-20,30,20250709_155441,201,
-barometer,1019.8,,,20250709_155441,201,
