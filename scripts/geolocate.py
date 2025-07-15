@@ -1,38 +1,63 @@
-import os
-import json
-from config import config
+from pathlib import Path
 from algorithms.fingerprint import fingerprint
 from algorithms.PDR import PDR
 from algorithms.filters import KalmanFilter
+from scripts.utils import (cfg, get_logger, read_csv_safe, write_csv_safe,
+                           read_json_safe, write_json_safe, default_pdr_row,
+                           default_fingerprint_row, default_qr_event)
 
-# Configuration des chemins
+
 def setup_paths():
-    project_root = config.get_project_root()
+    """Retourne les chemins des fichiers live à charger."""
     return {
-        'pdr_file': os.path.join(project_root, 'data', 'pdr_traces', 'current.csv'),
-        'knn_train': os.path.join(project_root, 'data', 'stats', 'knn_train.csv'),
-        'fingerprints': os.path.join(project_root, 'data', 'recordings', 'current_fingerprints.csv'),
-        'qr_events': os.path.join(project_root, 'data', 'qr_events.json')
+        'pdr_file'     : cfg.PDR_TRACE,
+        'knn_train'    : cfg.STATS_DIR / cfg.GLOBAL_KNN,
+        'fingerprints' : cfg.FP_CURRENT,
+        'qr_events'    : cfg.QR_EVENTS,
     }
 
+def get_last_qr_position(events_path: Path):
+    """Renvoie la position du dernier événement QR, ou None."""
+    events = read_json_safe(events_path)
+    if not isinstance(events, list) or not events:
+        return None
+    last = events[-1]
+    return tuple(last.get('position', (None, None)))
 
-def get_latest_positions(paths):
+def get_latest_positions() -> tuple:
     """
-    Récupère la dernière position PDR et la position fingerprint kNN, plus le dernier reset QR.
+    Récupère les 3 sources de position :
+      - PDR (via PDR(paths['pdr_file']))
+      - fingerprinting WiFi (via fingerprint(...))
+      - dernier reset QR (dernier item de qr_events.json)
+    Renvoie un tuple (pdr_pos, finger_pos, qr_pos) où chaque pos est
+    soit (lat,lon) soit None.
     """
-    # --- PDR offline ---
-    thetas, positions = PDR(paths['pdr_file'])
-    if positions is None or len(positions) == 0:
+    paths = setup_paths()
+
+    # --- 1) PDR offline ---
+    try:
+        thetas, positions = PDR(str(paths['pdr_file']))
+        pdr_pos = tuple(positions[-1]) if positions and len(positions)>0 else None
+    except Exception:
         pdr_pos = None
-    else:
-        pdr_pos = tuple(positions[-1])
 
-    # --- Wi‑Fi fingerprinting kNN ---
-    kP = config.get('knn.kP', 3)
-    kZ = config.get('knn.kZ', 3)
-    R  = config.get('floor.threshold', 5.0)
-    finger_preds = fingerprint(
-        knntrainfile=paths['knn_train'],
-        FPfile=paths['fingerprints'],
-        kP=kP, kZ=kZ, R=R
-    )
+    # --- 2) Wi‑Fi fingerprinting kNN ---
+    try:
+        # Ici tu peux remplacer par tes hyper‑params ou charger un petit dict de config
+        finger = fingerprint(
+            knntrainfile=str(paths['knn_train']),
+            FPfile=str(paths['fingerprints']),
+            kP=3, kZ=3, R=5.0
+        )
+        finger_pos = tuple(finger) if finger is not None else None
+    except Exception:
+        finger_pos = None
+
+    # --- 3) Dernier QR reset ---
+    try:
+        qr_pos = get_last_qr_position(paths['qr_events'])
+    except Exception:
+        qr_pos = None
+
+    return pdr_pos, finger_pos, qr_pos

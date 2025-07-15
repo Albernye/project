@@ -10,10 +10,9 @@ from flask import Flask, render_template, request, jsonify
 import json
 import csv
 from datetime import datetime
-from scripts.geolocate import setup_paths, get_latest_positions
+from scripts.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from scripts.record_realtime import record_realtime
-from algorithms.PDR import PDR
 from algorithms.pathfinding import PathFinder
 from scripts.utils import get_room_position
 
@@ -89,8 +88,7 @@ pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
 def get_position():
     """Renvoie la position actuelle fusionnée"""
     try:
-        paths = setup_paths()
-        pdr_pos, finger_pos, qr_reset = get_latest_positions(paths)
+        pdr_pos, finger_pos, qr_reset = get_latest_positions()
         
         # Fusion Kalman
         fused_pos = fuse(pdr_pos, finger_pos, qr_reset)
@@ -324,8 +322,7 @@ def update_position():
 
         # Récupération des dernières positions
         try:
-            paths = setup_paths()
-            pdr_pos, finger_pos, qr_reset = get_latest_positions(paths)
+            pdr_pos, finger_pos, qr_reset = get_latest_positions()
         except Exception as e:
             logger.error(f"Erreur get_latest_positions: {e}")
             pdr_pos = finger_pos = qr_reset = None
