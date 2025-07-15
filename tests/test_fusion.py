@@ -1,6 +1,10 @@
 import pytest
 import numpy as np
 from algorithms.fusion import fuse, reset_kalman
+import sys
+from pathlib import Path
+# Ajoute le dossier racine du projet au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def test_fusion_singleton():
     # Teste le modèle singleton dans la fusion

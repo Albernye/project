@@ -5,6 +5,11 @@ from algorithms.fusion import fuse
 from algorithms.PDR import PDR
 import pandas as pd
 
+import sys
+from pathlib import Path
+# Ajoute le dossier racine du projet au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 @pytest.fixture
 def kalman():
     return KalmanFilter()

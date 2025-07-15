@@ -3,6 +3,10 @@ import numpy as np
 import pandas as pd
 from unittest.mock import patch
 from algorithms.fingerprint import euclidean_distance, fingerprint
+import sys
+from pathlib import Path
+# Ajoute le dossier racine du projet au PYTHONPATH
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 def test_euclidean_distance():
     # Coordonnées de test (longitude, latitude)
