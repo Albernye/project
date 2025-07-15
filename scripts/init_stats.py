@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Initialisation (preprocessing) des données brutes a priori :
 - Parcourt data/raw/2-XX_*/
