@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ];
 
   L.imageOverlay(
-    '/static/OBuildingFloor2.png',
+    '/static/OBuilding_Floor2.png',
     imageBounds,
     { opacity: 1.0 }
   ).addTo(map);

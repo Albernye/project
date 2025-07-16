@@ -56,7 +56,7 @@ def normalize_room_id(room_id):
     # Assurer que c'est un nombre à 2 chiffres
     try:
         room_num = int(room_id)
-        return f"2-{room_num:02d}"
+        return f"{room_num:02d}"
     except ValueError:
         logger.warning(f"ID de salle invalide: {room_id}")
         return None
@@ -198,6 +198,7 @@ def home():
 
 @app.route('/location')
 def location():
+    """Page d'accueil pour une salle spécifique"""
     room = request.args.get('room')
     if not room:
         return "❌ Missing 'room' parameter", 400
@@ -218,6 +219,7 @@ def location():
 
 @app.route('/collect_sensor_data', methods=['POST'])
 def collect_sensor_data_route():
+    """Collecte et traite les données de capteurs"""
     try:
         data = request.get_json()
         if not data:
@@ -229,8 +231,8 @@ def collect_sensor_data_route():
         # Normalisation du nom de salle
         normalized_room = normalize_room_id(room)
         folder_name = normalized_room if normalized_room else f"2-{room}"
-        
-        folder = Path(get_project_root()) / 'data' / 'raw' / folder_name
+
+        folder = Path(get_project_root()) / 'data' / 'recordings' / folder_name
         folder.mkdir(parents=True, exist_ok=True)
 
         # Sauvegarde des données de capteurs
@@ -274,6 +276,7 @@ def collect_sensor_data_route():
 
 @app.route('/data')
 def view_data():
+    """Affiche les données collectées"""
     try:
         project_root = get_project_root()
         data_file = Path(project_root) / 'data' / 'sensor_data.csv'
@@ -299,6 +302,7 @@ def view_data():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
+    """Met à jour la position actuelle en fonction des données reçues"""
     global current_position, previous_position, position_history
 
     try:
@@ -362,6 +366,7 @@ def update_position():
 
 @app.route('/confirm_position', methods=['POST'])
 def confirm_position():
+    """Confirme la position actuelle dans une salle spécifique"""
     global current_position
     
     try:
