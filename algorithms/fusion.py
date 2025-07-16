@@ -6,12 +6,25 @@ from algorithms.filters import KalmanFilter
 
 _kf = None
 
-def fuse(pdr_pos, finger_pos, qr_reset=None):
+def get_floor_from_room(room_str):
+    """
+    Extracts the floor number from a room identifier string.
+    Example: "2-01" -> 2
+    """
+    try:
+        return int(room_str[0])
+    except (ValueError, IndexError):
+        return None
+
+def fuse(pdr_pos, finger_pos, qr_reset=None, room=None):
     """
     Fusionne les positions avec un filtre de Kalman :
-    - pdr_pos : estimation par déplacement relatif (PDR)
-    - finger_pos : estimation absolue (Wi-Fi fingerprint)
-    - qr_reset : position absolue de référence (QR code)
+    - pdr_pos : estimation par déplacement relatif (PDR) tuple (delta_x, delta_y)
+    - finger_pos : estimation absolue (Wi-Fi fingerprint) tuple (x, y)
+    - qr_reset : position absolue de référence (QR code) tuple (x, y)
+    - room : identifiant de la salle (str) pour le logging
+
+    Returns the fused position as a tuple (x, y, floor).
     """
     global _kf
     if _kf is None:
@@ -19,18 +32,28 @@ def fuse(pdr_pos, finger_pos, qr_reset=None):
 
     # Reset avec QR si présent
     if qr_reset:
-        print(f"Resetting Kalman filter with position: {qr_reset}")
-        _kf.reset_state(qr_reset)
+        lat, lon = qr_reset
+        floor = get_floor_from_room(room)
+        init_state = (lat, lon, floor) if floor is not None else (lat, lon)
+        print(f"Resetting Kalman filter with position: {init_state}")
+        _kf.reset_state(init_state)
         return _kf.get_state()
 
     # Mise à jour prédictive avec PDR
     if pdr_pos:
-        print(f"Applying PDR delta: {pdr_pos}")
-        _kf.predict(pdr_delta=pdr_pos)
+        dx, dy = pdr_pos
+        dfloor = 0 # Pas de changement d'étage pour PDR
+        delta3 = (dx, dy, dfloor)
+        print(f"Applying PDR delta: {delta3}")
+        _kf.predict(pdr_delta=delta3)
 
     # Mise à jour corrective avec fingerprint
     if finger_pos:
-        _kf.update(measurement=finger_pos)
+        x, y = finger_pos
+        floor = get_floor_from_room(room)
+        z3 = (x, y, floor) if floor is not None else (x, y)
+        print(f"Updating Kalman filter with fingerprint position: {z3}")
+        _kf.update(measurement=z3)
 
     return _kf.get_state()
 
@@ -45,5 +68,5 @@ if __name__ == '__main__':
     if not pdr_pos or not finger_pos:
         print("❌ Fusion impossible : position PDR ou fingerprint manquante.")
     else:
-        fused = fuse(pdr_pos, finger_pos, qr_reset)
+        fused = fuse(pdr_pos, finger_pos, qr_reset, room="2-01")
         print(f"✅ Position fusionnée : {fused}")

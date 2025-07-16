@@ -90,10 +90,15 @@ def get_position():
     """Renvoie la position actuelle fusionnée"""
     try:
         pdr_pos, finger_pos, qr_reset = get_latest_positions()
+
+        # Recupère le numéro de la salle depuis les paramètres de la requête
+        room = request.args.get('room')
+        if not room:
+            return jsonify({"error": "Missing 'room' parameter"}), 400
         
         # Fusion Kalman
-        fused_pos = fuse(pdr_pos, finger_pos, qr_reset)
-        
+        fused_pos = fuse(pdr_pos, finger_pos, qr_reset, room=room)
+
         # S'assure que c'est une liste de floats [lat, lon]
         if fused_pos is not None:
             pos_list = list(map(float, fused_pos))
@@ -334,7 +339,7 @@ def update_position():
 
         # Fusion Kalman
         try:
-            fused_position = fuse(pdr_pos, finger_pos, qr_reset)
+            fused_position = fuse(pdr_pos, finger_pos, qr_reset, room=room)
         except Exception as e:
             logger.error(f"Erreur fusion Kalman: {e}")
             fused_position = None
