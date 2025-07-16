@@ -45,21 +45,38 @@ def load_corridor_data():
         return None
 
 def normalize_room_id(room_id):
-    """Normalise les identifiants de salle au format 2-XX"""
+    """
+    Normalise les identifiants de salle au format floor-room,
+    par exemple :
+      - "201" -> "2-01"
+      - "2-01" -> "2-01"
+      - "15"  -> "0-15" 
+    """
     if not room_id:
         return None
-    
-    # Enlever le préfixe "2-" s'il existe
-    if room_id.startswith('2-'):
-        room_id = room_id[2:]
-    
-    # Assurer que c'est un nombre à 2 chiffres
-    try:
-        room_num = int(room_id)
-        return f"{room_num:02d}"
-    except ValueError:
-        logger.warning(f"ID de salle invalide: {room_id}")
-        return None
+
+    # Cas déjà au format "X-YY"
+    if '-' in room_id:
+        parts = room_id.split('-')
+        if len(parts)==2 and parts[0].isdigit() and parts[1].isdigit():
+            floor, num = int(parts[0]), int(parts[1])
+            return f"{floor}-{num:02d}"
+        else:
+            return None
+
+    # Cas compact "FNN" (3 chiffres) : F = floor, NN = numéro
+    if len(room_id) == 3 and room_id.isdigit():
+        floor = int(room_id[0])
+        num   = int(room_id[1:])
+        return f"{floor}-{num:02d}"
+
+    # Cas deux chiffres "NN" : étage par défaut à 2 (étage courant)
+    if room_id.isdigit():
+        num = int(room_id)
+        return f"2-{num:02d}"
+
+    logger.warning(f"ID de salle invalide: {room_id}")
+    return None
 
 def get_node_position(node_id, corridor_data):
     """Récupère la position d'un nœud (salle ou point de couloir)"""
@@ -182,7 +199,7 @@ def get_route():
         })
         
     except Exception as e:
-        logger.error(f"Erreur lors du calcul d'itinéraire: {e}")
+        logger.exception("Erreur lors du calcul d'itinéraire")  # Log la trace complète
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')
@@ -356,7 +373,7 @@ def update_position():
 
         response = {
             "status": "success",
-            "position": current_position.tolist() if current_position is not None else [0.0, 0.0],
+            "position": list(current_position) if current_position is not None else [0.0, 0.0],
             "room": folder_name
         }
 

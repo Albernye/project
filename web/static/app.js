@@ -19,7 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ];
 
   L.imageOverlay(
-    '/static/OBuilding_Floor2.png',
+    'static/OBuilding_Floor2.png',
     imageBounds,
     { opacity: 1.0 }
   ).addTo(map);
@@ -35,6 +35,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function handleError(err) {
     console.error(err);
   }
+  console.log("Script loaded !");
+  const mapElement = document.getElementById("map");
+  console.log("Map element:", mapElement);
+  console.log("Room:", mapElement.dataset.room);
 
   // ——————————————————————————————
   // 3. Requête /position et MAJ du marqueur

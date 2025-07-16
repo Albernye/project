@@ -32,7 +32,7 @@ def fuse(pdr_pos, finger_pos, qr_reset=None, room=None):
 
     # Reset avec QR si présent
     if qr_reset:
-        lat, lon = qr_reset
+        lat, lon, *_ = qr_reset[:2]
         floor = get_floor_from_room(room)
         init_state = (lat, lon, floor) if floor is not None else (lat, lon)
         print(f"Resetting Kalman filter with position: {init_state}")
@@ -41,16 +41,16 @@ def fuse(pdr_pos, finger_pos, qr_reset=None, room=None):
 
     # Mise à jour prédictive avec PDR
     if pdr_pos:
-        dx, dy = pdr_pos
-        dfloor = 0 # Pas de changement d'étage pour PDR
+        dx, dy = pdr_pos[:2]
+        dfloor = pdr_pos[2] if len(pdr_pos) > 2 else 0  # Pas de changement d'étage pour PDR
         delta3 = (dx, dy, dfloor)
         print(f"Applying PDR delta: {delta3}")
         _kf.predict(pdr_delta=delta3)
 
     # Mise à jour corrective avec fingerprint
     if finger_pos:
-        x, y = finger_pos
-        floor = get_floor_from_room(room)
+        x, y, *_ = finger_pos[:2]
+        floor = finger_pos[2] if len(finger_pos) > 2 else get_floor_from_room(room)
         z3 = (x, y, floor) if floor is not None else (x, y)
         print(f"Updating Kalman filter with fingerprint position: {z3}")
         _kf.update(measurement=z3)

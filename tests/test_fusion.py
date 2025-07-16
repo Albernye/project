@@ -54,7 +54,7 @@ def test_fusion_reset():
     qr_pos = (3.0, 4.0, 0.0)
     
     # Reset avec position QR
-    fused = fuse(None, None, qr_reset=qr_pos)
+    fused = fuse(None, None, qr_reset=qr_pos, room="2-01")
     
     print("DEBUG fused:", fused, "qr_pos:", qr_pos)
     
