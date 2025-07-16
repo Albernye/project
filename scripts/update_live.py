@@ -1,3 +1,6 @@
+" This script updates the live data for a specific room by processing PDR, fingerprint, and QR event data."
+# It reads the latest data from CSV files, updates the PDR trace, fingerprint current data"
+
 import argparse
 import pandas as pd
 from pathlib import Path
