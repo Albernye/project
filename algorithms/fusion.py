@@ -39,10 +39,11 @@ def fuse(pdr_pos, finger_pos, qr_reset=None, room=None):
         _kf.reset_state(init_state)
         return _kf.get_state()
 
-    # Mise à jour prédictive avec PDR
-    if pdr_pos:
-        dx, dy = pdr_pos[:2]
-        dfloor = pdr_pos[2] if len(pdr_pos) > 2 else 0  # Pas de changement d'étage pour PDR
+    # Mise à jour prédictive avec PDR (gestion des types)
+    if pdr_pos is not None and isinstance(pdr_pos, (list, tuple)):
+        dx = float(pdr_pos[0])
+        dy = float(pdr_pos[1]) 
+        dfloor = int(pdr_pos[2]) if len(pdr_pos) > 2 else 0
         delta3 = (dx, dy, dfloor)
         print(f"Applying PDR delta: {delta3}")
         _kf.predict(pdr_delta=delta3)
