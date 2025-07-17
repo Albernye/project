@@ -131,6 +131,59 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
     except Exception as e:
         logger.error(f"Error processing room {room}: {e}", exc_info=True)
 
+def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bool:
+    """
+    Traite un dossier raw/Route-N comme une 'route' :
+      - lit tous les capteurs CSV
+      - merge_sensor_data pour obtenir ACCE_*, GYRO_*, MAGN_* sur un même index timestamp
+      - sauvegarde en processed/route_<N>_processed.csv
+    """
+    logger = logging.getLogger(__name__)
+    logger.info(f"Processing raw/{folder.name} → route {route_name}")
+
+    # 1. Lire tous les fichiers capteurs
+    dfs = []
+    for f in list_sensor_files(folder):
+        df = read_sensor_csv(f, route_name)
+        if df is None or df.empty:
+            logger.warning(f"Skip invalid file {f.name}")
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"Processing raw/{folder.name} → route {route_name}")
+
+    # 1. Lire tous les fichiers capteurs
+    dfs = []
+    for f in list_sensor_files(folder):
+        df = read_sensor_csv(f, route_name)
+        if df is None or df.empty:
+            logger.warning(f"Skip invalid file {f.name}")
+        else:
+            dfs.append(df)
+            logger.info(f"Loaded {f.name}: {len(df)} rows")
+
+    if not dfs:
+        logger.error(f"No valid sensor data in {folder}")
+        return False
+
+    # 2. Fusionner sur le timestamp
+    try:
+        logger.info("Merging sensor data for route...")
+        merged = merge_sensor_data(dfs)
+        if merged.empty:
+            logger.error("merge_sensor_data returned empty")
+            return False
+
+        # 3. Sauvegarde sans géo
+        out_file = processed_dir / f"route_{route_name}_processed.csv"
+        merged.to_csv(out_file, index=False)
+        logger.info(f"Exported {out_file}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Error processing route {route_name}: {e}", exc_info=True)
+        return False
+
 def build_global_training_set() -> bool:
     """
     Construit le fichier d'entraînement global pour le kNN
@@ -179,10 +232,15 @@ def build_global_training_set() -> bool:
             harmonized_dfs.append(df_room)
         
         # Concaténation finale
+        harmonized_dfs = [df.dropna(axis=1, how='all')  # supprime les colonnes complètement vides
+            for df in harmonized_dfs
+            if not df.empty and df.dropna(how='all', axis=1).shape[1] > 0
+        ]
+
         df_knn = pd.concat(harmonized_dfs, ignore_index=True)
         
         # Sauvegarde
-        out_knn = cfg.STATS_DIR / cfg.GLOBAL_TRAIN_FILE
+        out_knn = cfg.STATS_DIR / cfg.GLOBAL_KNN
         df_knn.to_csv(out_knn, index=False)
         
         logger.info(f"Global training file: {out_knn} ({len(df_knn)} rows, {len(all_columns)} columns)")
@@ -208,21 +266,32 @@ def init_stats(verbose: bool = False) -> None:
 
     # Traitement des salles
     processed_rooms = []
+    processed_routes = []
     total_folders = 0
 
     for folder in sorted(cfg.RAW_DIR.iterdir()):
-        if not folder.is_dir() or not folder.name.startswith(cfg.ROOM_PREFIX):
+        if not folder.is_dir():
             continue
-            
+
         total_folders += 1
-        
-        try:
-            room = extract_room(folder.name)
-            if process_room_data(folder, room, processed_dir):
-                processed_rooms.append(room)
-        except Exception as e:
-            logger.error(f"Error processing folder {folder.name}: {e}")
-            continue
+
+        if folder.name.startswith(cfg.ROOM_PREFIX):
+            try:
+                room = extract_room(folder.name)
+                if process_room_data(folder, room, processed_dir):
+                    processed_rooms.append(room)
+            except Exception as e:
+                logger.error(f"Error processing room folder {folder.name}: {e}")
+                continue
+
+        elif folder.name.startswith("Route-"):
+            try:
+                route_name = folder.name.split("-")[-1]
+                if process_route_data(folder, route_name, processed_dir):
+                    processed_routes.append(route_name)
+            except Exception as e:
+                logger.error(f"Error processing route folder {folder.name}: {e}")
+                continue
     
     # Construction du fichier d'entraînement global
     global_success = build_global_training_set()
@@ -231,13 +300,17 @@ def init_stats(verbose: bool = False) -> None:
     logger.info(f"Processing complete:")
     logger.info(f"  - Folders found: {total_folders}")
     logger.info(f"  - Rooms processed: {len(processed_rooms)}")
+    logger.info(f"  - Routes processed: {len(processed_routes)}")
     logger.info(f"  - Global training set: {'✅' if global_success else '❌'}")
     
     if processed_rooms:
         logger.info(f"  - Processed rooms: {', '.join(processed_rooms)}")
     
-    if len(processed_rooms) == 0:
-        logger.warning("No rooms were successfully processed!")
+    if processed_routes:
+        logger.info(f"  - Processed routes: {', '.join(processed_routes)}")
+    
+    if len(processed_rooms) == 0 and len(processed_routes) == 0:
+        logger.warning("No data were successfully processed!")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Init sensor stats & processed data")
