@@ -18,19 +18,19 @@ def extract_room(folder_name: str) -> str:
     return f"{parts[0]}-{parts[1].zfill(2)}" if len(parts) >= 2 else base
 
 def list_sensor_files(folder: Path):
-    """Liste les fichiers de capteurs, privilégiant les versions calibrées si disponibles"""
+    """Liste les fichiers de capteurs, prenant en compte les suffixes _0"""
     candidates = {f.stem.lower(): f for f in folder.glob("*.csv")}
     files = []
     for name, f in candidates.items():
-        key = name.replace(UNCALIBRATED_SUFFIX, '')
-        if key not in SENSOR_MAPPING: 
+        # Supprime _0 si présent
+        key = name.replace('_0', '').replace(UNCALIBRATED_SUFFIX, '')
+        if key not in SENSOR_MAPPING:
+            print(f"❌ '{key}' not in SENSOR_MAPPING")
             continue
-        if not name.endswith(UNCALIBRATED_SUFFIX):
-            unc = key + UNCALIBRATED_SUFFIX
-            if unc in candidates and f.stat().st_size < 50 and candidates[unc].stat().st_size >= 50:
-                continue
+        print(f"✅ Match found: '{key}'")
         files.append(f)
     return files
+
 
 def read_sensor_csv(file: Path, room: str) -> pd.DataFrame:
     """Lit un fichier CSV de capteur et standardise les colonnes selon le format réel"""
@@ -52,26 +52,28 @@ def read_sensor_csv(file: Path, room: str) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     
     # Identification du capteur
+
     name = file.stem.lower()
     unc = name.endswith(UNCALIBRATED_SUFFIX)
-    key = name.replace(UNCALIBRATED_SUFFIX, '')
+    key = name.replace('_0', '').replace(UNCALIBRATED_SUFFIX, '')
     sensor = SENSOR_MAPPING.get(key)
     
-    if not sensor: 
+    if not sensor:
+        print(f"❌ '{key}' not found in SENSOR_MAPPING") 
         return None
     
     df['sensor_type'] = sensor + (UNCALIBRATED_SUFFIX if unc else '')
     df['room'] = room
     df['source_file'] = file.name
     
-    # Conversion du timestamp - utiliser seconds_elapsed si disponible, sinon time
+    # Conversion du timestamp - utiliser seconds_elapsed si disponible, time ou timestamp sinon
     if 'seconds_elapsed' in df.columns:
         df['timestamp'] = pd.to_numeric(df['seconds_elapsed'], errors='coerce')
     elif 'time' in df.columns:
         # Convertir le timestamp nanosecondes en secondes depuis le début
         df['timestamp'] = pd.to_numeric(df['time'], errors='coerce')
-        if df['timestamp'].notna().any():
-            df['timestamp'] = (df['timestamp'] - df['timestamp'].iloc[0]) / 1e9
+    elif 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_numeric(df['timestamp'], errors='coerce')
     else:
         print(f"⚠️ Pas de colonne temporelle trouvée dans {file.name}")
         return None

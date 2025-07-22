@@ -13,7 +13,11 @@ from scripts.utils import cfg
 
 def record_realtime(folder: Path, client_ip: str):
     room = extract_room(folder.name)
-    dfs = [read_sensor_csv(f, room) for f in list_sensor_files(folder)]
+    sensor_files = list_sensor_files(folder)
+    print(f"🗂️ Fichiers détectés : {sensor_files}")
+    dfs = [read_sensor_csv(f, room) for f in sensor_files]
+    print(f"📊 DataFrames valides : {[type(d) for d in dfs]}")
+
     dfs = [d for d in dfs if d is not None]
     if not dfs:
         print(f"⚠️ Pas de données valides pour {folder.name}")

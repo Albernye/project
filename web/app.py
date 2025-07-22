@@ -276,17 +276,21 @@ def collect_sensor_data_route():
                             ])
 
         # Traitement des données en temps réel
+        record_success = False
         try:
             success = record_realtime(folder, data['client_ip'])
+            record_success = success
             if not success:
                 logger.warning("record_realtime a échoué, mais les données sont sauvegardées")
         except Exception as e:
             logger.error(f"Erreur record_realtime: {e}")
 
+        # Return success regardless of record_realtime status since data was saved
         return jsonify({
             "status": "success",
             "message": "Data collected and processed successfully",
-            "room": folder_name
+            "room": folder_name,
+            "record_realtime_status": record_success
         })
         
     except Exception as e:
