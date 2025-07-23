@@ -2,13 +2,13 @@
 # It reads the latest data from CSV files, updates the PDR trace, fingerprint current data"
 
 import argparse
+from datetime import datetime, timezone 
 import pandas as pd
-from pathlib import Path
 from scripts.utils import (
     cfg, get_logger,
     read_csv_safe, write_csv_safe,
     read_json_safe, write_json_safe,
-    default_pdr_row, default_fingerprint_row, default_qr_event
+    default_pdr_row, default_fingerprint_row, get_room_position, default_qr_event
 )
 
 def update_pdr(room, logger):
@@ -36,10 +36,50 @@ def update_fp(room, logger):
         logger.warning("Fingerprint default created")
 
 def update_qr(room, logger):
-    events = read_json_safe(cfg.QR_EVENTS)
-    events.append(default_qr_event(room))
-    write_json_safe(events, cfg.QR_EVENTS)
-    logger.info("QR event appended")
+    """Version corrigée avec validation complète"""
+    try:
+        # 1. Lire le fichier existant
+        events_path = cfg.QR_EVENTS
+        logger.info(f"Début mise à jour QR pour salle {room}")
+        logger.info(f"Chemin fichier: {events_path}")
+
+        current_events = read_json_safe(events_path)
+        if not isinstance(current_events, list):
+            current_events = []
+            logger.warning("Fichier QR corrompu - réinitialisé à une liste vide")
+
+        # 2. Récupérer la position réelle de la salle
+        try:
+            lon, lat = get_room_position(room)
+            if lon == 0.0 and lat == 0.0:  # Position par défaut
+                logger.warning(f"Aucune position trouvée pour la salle {room}")
+                lon, lat = cfg.DEFAULT_POSXY
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération de la position: {str(e)}")
+            lon, lat = cfg.DEFAULT_POSXY  
+
+        logger.info(f"Position utilisée pour le reset: ({lon}, {lat})")
+
+        # 3. Créer le nouvel événement
+        new_event = default_qr_event(room, lon, lat)
+
+        # 4. Ajouter et sauvegarder
+        current_events.append(new_event)
+        write_json_safe(current_events, events_path)
+        logger.info(f"Mise à jour réussie. Nouveau total: {len(current_events)} événements")
+
+        # 5. Vérification
+        saved_events = read_json_safe(events_path)
+        if len(saved_events) != len(current_events):
+            logger.error("Problème: nombre d'événements différent après sauvegarde")
+        else:
+            last_event = saved_events[-1]
+            logger.info(f"Dernier événement sauvegardé: {last_event}")
+
+    except Exception as e:
+        logger.error(f"Échec de la mise à jour QR: {str(e)}", exc_info=True)
+        raise  # Pour s'assurer que l'erreur est visible
+
 
 def main(room, verbose=False):
     logger = get_logger(__name__, verbose)

@@ -1,8 +1,13 @@
 from pathlib import Path
+from typing import Optional
+import logging
 from algorithms.fingerprint import fingerprint
 from algorithms.PDR import PDR
 from algorithms.filters import KalmanFilter
 from scripts.utils import (cfg, read_json_safe)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def setup_paths():
@@ -14,13 +19,38 @@ def setup_paths():
         'qr_events'    : cfg.QR_EVENTS,
     }
 
-def get_last_qr_position(events_path: Path):
+def get_last_qr_position(qr_events_path: Path) -> Optional[tuple]:
     """Renvoie la position du dernier événement QR, ou None."""
-    events = read_json_safe(events_path)
-    if not isinstance(events, list) or not events:
+    try:
+        events = read_json_safe(qr_events_path)
+        if not events:
+            logger.warning("Aucun événement QR trouvé")
+            return None
+
+        last_event = events[-1]
+        position = last_event.get('position')
+
+        if not position or not isinstance(position, (list, tuple)):
+            logger.error(f"Position QR invalide: {position}")
+            return None
+
+        if len(position) < 2:
+            logger.error(f"Position QR trop courte: {position}")
+            return None
+
+        # Conversion en float et validation
+        try:
+            lon, lat = float(position[0]), float(position[1])
+            logger.info(f"Position QR récupérée: ({lon}, {lat})")
+            return (lon, lat)
+        except (ValueError, TypeError) as e:
+            logger.error(f"Position QR non numérique: {position}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Erreur lors de la lecture des événements QR: {e}")
         return None
-    last = events[-1]
-    return tuple(last.get('position', (None, None)))
+
 
 def get_latest_positions() -> tuple:
     """

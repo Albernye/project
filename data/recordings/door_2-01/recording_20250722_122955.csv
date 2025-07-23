@@ -1,4 +1,0 @@
-x,y,z,timestamp,sensor_type,room,source_file
-0.0,1.0,0.0,,accelerometer,2-01,accelerometer_0.csv
-0.1,0.2,0.3,,gyroscope,2-01,gyroscope_0.csv
-10.0,20.0,30.0,,magnetometer,2-01,magnetometer_0.csv

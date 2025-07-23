@@ -51,6 +51,7 @@ class Config:
 
 cfg = Config()
 
+logger = logging.getLogger(__name__)
 
 # =============================================================================
 # 2) LOGGING
@@ -104,11 +105,13 @@ def default_pdr_row() -> Dict[str, Any]:
 def default_fingerprint_row() -> Dict[str, int]:
     return {f"AP{i}": cfg.DEFAULT_RSSI for i in range(1, cfg.DEFAULT_AP_N+1)}
 
-def default_qr_event(room: str) -> Dict[str, Any]:
+def default_qr_event(room: str) -> Dict[str, Any]: 
+    if position is None:
+        position = cfg.DEFAULT_POSXY
     return {
       "room":      room,
-      "timestamp": datetime.utcnow().isoformat()+"Z",
-      "position":  list(cfg.DEFAULT_POSXY)
+      "timestamp": datetime.now(timezone.utc).isoformat(),
+      "position": list(position)
     }
 
 
@@ -153,23 +156,25 @@ def get_room_position(room_number: str) -> tuple[float, float]:
     """
     global _room_positions_cache
     if _room_positions_cache is None:
-        # Chemin vers data/room_positions.csv
         project_root = Path(__file__).resolve().parent.parent
         csv_path = project_root / "data" / "room_positions.csv"
         
         if not csv_path.exists():
-            print(f"⚠️ Fichier room_positions.csv non trouvé: {csv_path}")
-            print("   Utilisation des coordonnées par défaut")
+            logger.warning(f"[get_room_position] room_positions.csv non trouvé: {csv_path}")
+            logger.warning("               Utilisation des coordonnées par défaut (0.0, 0.0)")
             return (0.0, 0.0)
-            
+        
+        logger.debug(f"[get_room_position] Chargement de {csv_path}")
         _room_positions_cache = load_room_positions(csv_path)
+        logger.info(f"[get_room_position] {_room_positions_cache!r} positions chargées")
     
-    # Si la salle n'existe pas, on renvoie des coordonnées par défaut
     if room_number not in _room_positions_cache:
-        print(f"⚠️ Salle {room_number} non trouvée dans room_positions.csv")
+        logger.warning(f"[get_room_position] Salle '{room_number}' non trouvée dans cache")
         return (0.0, 0.0)
     
-    return _room_positions_cache[room_number]
+    coord = _room_positions_cache[room_number]
+    logger.debug(f"[get_room_position] '{room_number}' -> {coord}")
+    return coord
 
 def get_qr_reset_position(qr_code):
     """Return the position of a room based on a QR code."""

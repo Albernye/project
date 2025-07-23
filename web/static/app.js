@@ -34,7 +34,6 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error("❌ ERREUR: La carte a des dimensions nulles!");
     console.log("🔍 Styles appliqués:", window.getComputedStyle(mapEl));
   }
-
   const initialRoom = mapEl.dataset.room;
   console.log("🏠 Room initiale:", initialRoom);
 
@@ -43,7 +42,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ——————————————————————————————
   
   let map;
-  
+  let userMarker;
+
   try {
     console.log("🗺️ Création de l'instance Leaflet...");
     
@@ -105,12 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // ——————————————————————————————
   
   console.log("📌 Ajout marqueur utilisateur...");
-  const userMarker = L.marker([41.406368, 2.175568], {
+  userMarker = L.marker([41.406368, 2.175568], {
     title: 'Votre position',
     draggable: false
   }).addTo(map);
   console.log("✅ Marqueur utilisateur ajouté");
-
   let routeLayer = null;
 
   // ——————————————————————————————
@@ -186,7 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (timestampEl) {
         timestampEl.textContent = new Date(timestamp).toLocaleTimeString();
       }
-
       // Centrer si nécessaire
       if (!map.getBounds().contains([lat, lng])) {
         map.setView([lat, lng], map.getZoom());
@@ -206,55 +204,51 @@ document.addEventListener('DOMContentLoaded', () => {
   // ——————————————————————————————
   
   // Bouton Route
-  const goBtn = document.getElementById('goBtn');
-  if (goBtn) {
-    goBtn.addEventListener('click', async () => {
-      const destSelect = document.getElementById('destSelect');
-      const dest = destSelect?.value;
-    
+const goBtn = document.getElementById('goBtn');
+if (goBtn) {
+  goBtn.addEventListener('click', async () => {
+    const destSelect = document.getElementById('destSelect');
+    const dest = destSelect?.value;
     if (!dest) {
       alert('Veuillez sélectionner une destination');
       return;
     }
-    
+
     try {
       goBtn.disabled = true;
       goBtn.textContent = 'Calcul...';
       showStatus("Calcul itinéraire...", "#007AFF");
-      
+
       const res = await fetch(`/route?from=${initialRoom}&to=${dest}`);
       if (!res.ok) throw new Error(`Erreur route: ${res.status}`);
-      
+
       const geojson = await res.json();
       console.log("🛤️ GeoJSON reçu:", geojson);
 
-      // Supprimer l'ancienne route
+      // Supprimer l'ancienne route si elle existe
       if (routeLayer) {
         map.removeLayer(routeLayer);
       }
-      
-      // Ajouter la nouvelle route
+
+      // Ajouter la nouvelle route avec des styles plus visibles
       routeLayer = L.geoJSON(geojson, {
-        style: { 
-          color: '#007AFF', 
-          weight: 4, 
-          opacity: 0.8,
-          dashArray: '10, 5'
+        style: {
+          color: '#FF0000',  // Rouge pour une meilleure visibilité
+          weight: 6,         // Épaisseur de la ligne
+          opacity: 1.0,      // Opacité complète
+          dashArray: null    // Ligne continue
         }
       }).addTo(map);
 
       // S'assurer que la route est devant l'image
       routeLayer.bringToFront();
-      // ou alternativement :
-      // imageOverlay.bringToBack();
 
       // Centrer la vue sur le centre de la route, sans toucher au zoom
       const routeCenter = routeLayer.getBounds().getCenter();
       map.setView(routeCenter, map.getZoom());
-
       showStatus("Itinéraire calculé", "#4CAF50");
       console.log("✅ Itinéraire affiché");
-      
+
     } catch (error) {
       console.error("❌ Erreur calcul route:", error);
       showStatus("Erreur itinéraire", "#ff4444");

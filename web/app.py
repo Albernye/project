@@ -3,6 +3,7 @@ import os
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
+import logging
 
 # Ajouter le répertoire racine au PYTHONPATH
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,18 +11,26 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, render_template, request, jsonify
 import json
 import csv
+import pandas as pd
 
 from scripts.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from scripts.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
 from scripts.utils import get_room_position
+from scripts.sensors import list_sensor_files, read_sensor_csv, merge_sensor_data, add_room_geo
+from scripts.update_live import update_pdr, update_fp
+from scripts.utils import cfg, get_logger,write_csv_safe
 
 # Configuration du logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+logger.info(f"DEFAULT_POSXY = {cfg.DEFAULT_POSXY}")
 
 # Variables globales pour le suivi de position
 current_position = None
@@ -107,7 +116,7 @@ def get_position():
     """Renvoie la position actuelle fusionnée"""
     try:
         pdr_pos, finger_pos, qr_reset = get_latest_positions()
-
+        logger.info(f"Positions récupérées - PDR: {pdr_pos}, Fingerprint: {finger_pos}, QR Reset: {qr_reset}")
         # Recupère le numéro de la salle depuis les paramètres de la requête
         room = request.args.get('room')
         if not room:
@@ -246,6 +255,7 @@ def collect_sensor_data_route():
         data = request.get_json()
         if not data:
             return jsonify({"status": "error", "message": "No data received"}), 400
+        logger.info(f"Structure complète des données reçues: {json.dumps(data, indent=2)}")
 
         data['client_ip'] = request.remote_addr
         room = data.get('room', 'unknown')
@@ -257,48 +267,102 @@ def collect_sensor_data_route():
         folder = Path(get_project_root()) / 'data' / 'recordings' / folder_name
         folder.mkdir(parents=True, exist_ok=True)
 
-        # Sauvegarde des données de capteurs
-        sensor_types = ['accelerometer', 'gyroscope', 'magnetometer']
+        logger.info(f"Structure des données reçues: {data.keys()}")
+        logger.info(f"Contenu accelerometer: {data.get('accelerometer', 'non présent')}")
+
+        # Sauvegarde des données brutes
+        sensor_types = ['accelerometer', 'gyroscope', 'magnetometer', 'wifi']
         for sensor_type in sensor_types:
             if sensor_type in data:
                 readings = data[sensor_type]
                 if isinstance(readings, list):
                     for i, reading in enumerate(readings):
                         filename = folder / f"{sensor_type}_{i}.csv"
+                        logger.info(f"Création du fichier: {filename}")
+
                         with open(filename, 'w', newline='', encoding='utf-8') as f:
                             writer = csv.writer(f)
-                            writer.writerow(['x', 'y', 'z', 'timestamp'])
-                            writer.writerow([
-                                reading.get('x', 0.0),
-                                reading.get('y', 0.0),
-                                reading.get('z', 0.0),
-                                datetime.now(timezone.utc).isoformat() + 'Z'
-                            ])
+                            if sensor_type == 'wifi':
+                                writer.writerow(['ssid', 'rssi', 'timestamp'])
+                                writer.writerow([
+                                    reading.get('ssid', 'unknown'),
+                                    reading.get('rssi', 0),
+                                    datetime.now(timezone.utc).isoformat() + 'Z'
+                                ])
+                            else:
+                                writer.writerow(['x', 'y', 'z', 'timestamp'])
+                                writer.writerow([
+                                    reading.get('x', 0.0),
+                                    reading.get('y', 0.0),
+                                    reading.get('z', 0.0),
+                                    datetime.now(timezone.utc).isoformat() + 'Z'
+                                ])
+        logger.info(f"Fichier {filename} créé avec succès")
+    except Exception as e:
+        logger.error(f"Erreur lors de la collecte des données: {e}")
 
-        # Traitement des données en temps réel
-        record_success = False
-        try:
-            success = record_realtime(folder, data['client_ip'])
-            record_success = success
-            if not success:
-                logger.warning("record_realtime a échoué, mais les données sont sauvegardées")
-        except Exception as e:
-            logger.error(f"Erreur record_realtime: {e}")
+        # Lecture et traitement des données
+        sensor_files = list_sensor_files(folder)
+        dfs = []
+        for file in sensor_files:
+            df = read_sensor_csv(file, folder_name)
+            if df is not None:
+                dfs.append(df)
 
-        # Return success regardless of record_realtime status since data was saved
+        if dfs:
+            # Fusion des données des capteurs
+            merged_df = merge_sensor_data(dfs)
+            if not merged_df.empty:
+                # Ajout des informations géographiques
+                merged_df = add_room_geo(merged_df, folder_name)
+
+                # Sauvegarde des données traitées
+                processed_file = cfg.PROCESSED_DIR / f"room_{normalized_room}_processed.csv"
+                write_csv_safe(merged_df, processed_file)
+                logger.info(f"Données traitées sauvegardées dans {processed_file}")
+
+                # Mise à jour des fichiers de localisation
+                update_localization_files(merged_df, folder_name, normalized_room)
+
         return jsonify({
             "status": "success",
             "message": "Data collected and processed successfully",
             "room": folder_name,
-            "record_realtime_status": record_success
         })
-        
+
     except Exception as e:
         logger.error(f"Erreur lors de la collecte: {e}")
         return jsonify({
             "status": "error",
             "message": f"Server error: {str(e)}"
         }), 500
+
+def update_localization_files(df: pd.DataFrame, folder_name: str, room: str):
+    """
+    Met à jour les fichiers de localisation (pdr_traces.csv, fingerprint.csv) avec les données traitées.
+    """
+    logger = get_logger(__name__)
+
+    # Sauvegarde des données traitées dans le dossier processed
+    processed_file = cfg.PROCESSED_DIR / f"room_{room}_processed.csv"
+    write_csv_safe(df, processed_file)
+
+    # Mise à jour des fichiers PDR
+    update_pdr(room, logger)
+
+    # Mise à jour des fichiers fingerprint
+    # Create a temporary CSV file for the fingerprint data
+    fp_src = Path(get_project_root()) / 'data' / 'recordings' / folder_name / 'latest.csv'
+    if fp_src.exists():
+        update_fp(room, logger)
+    else:
+        logger.warning(f"Pas de fichier fingerprint trouvé pour {room}")
+
+    # Mise à jour des événements QR (si nécessaire)
+    # update_qr(room, logger)
+
+    logger.info(f"Fichiers de localisation mis à jour pour la salle {room}")
+
 
 @app.route('/data')
 def view_data():
