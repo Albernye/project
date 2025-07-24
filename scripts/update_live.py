@@ -2,6 +2,7 @@
 # It reads the latest data from CSV files, updates the PDR trace, fingerprint current data"
 
 import argparse
+from pathlib import Path
 from datetime import datetime, timezone 
 import pandas as pd
 from scripts.utils import (
@@ -36,17 +37,12 @@ def update_fp(room, logger):
         logger.warning("Fingerprint default created")
 
 def update_qr(room, logger):
-    """Version corrigée avec validation complète"""
+    """Mise à jour complète du fichier QR"""
     try:
         # 1. Lire le fichier existant
         events_path = cfg.QR_EVENTS
         logger.info(f"Début mise à jour QR pour salle {room}")
         logger.info(f"Chemin fichier: {events_path}")
-
-        current_events = read_json_safe(events_path)
-        if not isinstance(current_events, list):
-            current_events = []
-            logger.warning("Fichier QR corrompu - réinitialisé à une liste vide")
 
         # 2. Récupérer la position réelle de la salle
         try:
@@ -63,22 +59,45 @@ def update_qr(room, logger):
         # 3. Créer le nouvel événement
         new_event = default_qr_event(room, lon, lat)
 
-        # 4. Ajouter et sauvegarder
-        current_events.append(new_event)
-        write_json_safe(current_events, events_path)
-        logger.info(f"Mise à jour réussie. Nouveau total: {len(current_events)} événements")
+        # 4. **Écraser complètement le fichier avec le seul nouvel événement**
+        write_json_safe([new_event], events_path)
+        logger.info("Fichier QR écrasé avec un seul nouvel événement")
 
         # 5. Vérification
         saved_events = read_json_safe(events_path)
-        if len(saved_events) != len(current_events):
-            logger.error("Problème: nombre d'événements différent après sauvegarde")
+        if saved_events != [new_event]:
+            logger.error("Problème: l'événement sauvegardé ne correspond pas à l'attendu")
         else:
-            last_event = saved_events[-1]
-            logger.info(f"Dernier événement sauvegardé: {last_event}")
+            logger.info(f"Événement correctement sauvegardé: {saved_events[-1]}")
 
     except Exception as e:
-        logger.error(f"Échec de la mise à jour QR: {str(e)}", exc_info=True)
-        raise  # Pour s'assurer que l'erreur est visible
+        logger.error(f"Erreur lors de la mise à jour des événements QR: {e}")
+        raise
+
+
+def update_localization_files(df: pd.DataFrame, folder_name: str, room: str):
+    """
+    Met à jour les fichiers de localisation (pdr_traces.csv, fingerprint.csv, qr_map.csv) avec les données traitées.
+    """
+    logger = get_logger(__name__)
+
+    # Sauvegarde des données traitées
+    processed_file = cfg.PROCESSED_DIR / f"room_{room}_processed.csv"
+    write_csv_safe(df, processed_file)
+
+    # Mise à jour des fichiers
+    update_pdr(room, logger)
+
+    fp_src = Path(cfg.RECORDINGS_DIR) / folder_name / 'latest.csv'
+    if fp_src.exists():
+        update_fp(room, logger)
+    else:
+        logger.warning(f"Pas de fichier fingerprint trouvé pour {room}")
+
+    update_qr(room, logger)
+
+    logger.info(f"Fichiers de localisation mis à jour pour la salle {room}")
+
 
 
 def main(room, verbose=False):

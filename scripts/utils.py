@@ -86,10 +86,16 @@ def read_json_safe(path: Path) -> Any:
     except Exception:
         return []
 
-def write_json_safe(obj: Any, path: Path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False), encoding='utf-8')
-
+def write_json_safe(obj: Any, path: Path | str):
+    """
+    Écrit un objet JSON de façon atomique en s'assurant que le dossier existe.
+    """
+    p = Path(path) if not isinstance(path, Path) else path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = p.with_suffix(p.suffix + ".tmp")
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    temp_path.rename(p)
 
 # =============================================================================
 # 4) DEFAULTS GENERATORS
@@ -105,13 +111,21 @@ def default_pdr_row() -> Dict[str, Any]:
 def default_fingerprint_row() -> Dict[str, int]:
     return {f"AP{i}": cfg.DEFAULT_RSSI for i in range(1, cfg.DEFAULT_AP_N+1)}
 
-def default_qr_event(room: str) -> Dict[str, Any]: 
-    if position is None:
-        position = cfg.DEFAULT_POSXY
+def default_qr_event(room: str,
+                     lon: float | None = None,
+                     lat: float | None = None) -> dict:
+    """
+    Crée un événement QR pour la salle `room`.
+    Si (lon, lat) sont fournis, on les utilise ;
+    sinon on tombe sur DEFAULT_POSXY.
+    """
+    if lon is None or lat is None:
+        lon, lat = cfg.DEFAULT_POSXY
+
     return {
-      "room":      room,
-      "timestamp": datetime.now(timezone.utc).isoformat(),
-      "position": list(position)
+        "room": room,
+        "timestamp": datetime.now(timezone.utc).isoformat()+"Z",
+        "position": [lon, lat],
     }
 
 

@@ -129,7 +129,7 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
         return True
         
     except Exception as e:
-        logger.error(f"Error processing room {room}: {e}", exc_info=True)
+        logger.exception(f"Error processing room {room}: {e}")
 
 def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bool:
     """
@@ -181,7 +181,7 @@ def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bo
         return True
 
     except Exception as e:
-        logger.error(f"Error processing route {route_name}: {e}", exc_info=True)
+        logger.exception(f"Error processing route {route_name}: {e}")
         return False
 
 def build_global_training_set() -> bool:

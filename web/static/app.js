@@ -156,20 +156,26 @@ document.addEventListener('DOMContentLoaded', () => {
   // ——————————————————————————————
   
   async function updatePosition() {
-    try {
-      console.log("🔄 Mise à jour position...");
-      showStatus("Mise à jour...", "#007AFF");
-      
-      const res = await fetch(`/position?room=${initialRoom}`);
-      if (!res.ok) {
-        throw new Error(`Erreur serveur: ${res.status} ${res.statusText}`);
-      }
-      
-      const data = await res.json();
-      console.log("📡 Données reçues:", data);
-      
-      const { position, timestamp } = data;
-      const [lng, lat] = position;
+  try {
+    await fetch("/scan_qr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ room: initialRoom })
+    });
+    console.log("🔄 Mise à jour position...");
+    showStatus("Mise à jour...", "#007AFF");
+    
+    // Récupérer la position depuis le serveur
+    const res = await fetch(`/position?room=${initialRoom}`);
+    if (!res.ok) {
+      throw new Error(`Erreur serveur: ${res.status} ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    console.log("📡 Données reçues:", data);
+
+    const { position, timestamp } = data;
+    const [lng, lat] = position;
 
       // Mettre à jour le marqueur
       userMarker.setLatLng([lat, lng]);
