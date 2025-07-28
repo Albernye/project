@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 from algorithms.fingerprint import fingerprint
-from algorithms.PDR import PDR
-from algorithms.filters import KalmanFilter
+from algorithms.PDR import pdr_delta
+from algorithms.filters import KalmanFilter,load_imu
 from scripts.utils import (cfg, read_json_safe)
 
 logging.basicConfig(level=logging.INFO)
@@ -63,29 +63,11 @@ def get_latest_positions() -> tuple:
     """
     paths = setup_paths()
 
-    # --- 1) PDR offline ---
-    try:
-        thetas, positions = PDR(str(paths['pdr_file']))
-        pdr_pos = tuple(positions[-1]) if positions and len(positions)>0 else None
-    except Exception:
-        pdr_pos = None
+    # Load sensor logs
+    accel, gyro, fs = load_imu(cfg.PDR_TRACE)  
+    dx, dy = pdr_delta(accel, gyro, fs)
+    pdr_pos=(dx,dy,0)
 
-    # --- 2) Wi‑Fi fingerprinting kNN ---
-    try:
-        # Ici tu peux remplacer par tes hyper‑params ou charger un petit dict de config
-        finger = fingerprint(
-            knntrainfile=str(paths['knn_train']),
-            FPfile=str(paths['fingerprints']),
-            kP=3, kZ=3, R=5.0
-        )
-        finger_pos = tuple(finger) if finger is not None else None
-    except Exception:
-        finger_pos = None
-
-    # --- 3) Dernier QR reset ---
-    try:
-        qr_pos = get_last_qr_position(paths['qr_events'])
-    except Exception:
-        qr_pos = None
-
-    return pdr_pos, finger_pos, qr_pos
+    wifi_pos = fingerprint(str(cfg.STATS_DIR/cfg.GLOBAL_KNN), str(cfg.FP_CURRENT))
+    qr_pos = get_last_qr_position(cfg.QR_EVENTS)
+    return pdr_pos, wifi_pos, qr_pos

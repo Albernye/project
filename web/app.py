@@ -3,24 +3,20 @@ import os
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-import logging
-
-# Ajouter le répertoire racine au PYTHONPATH
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from flask import Flask, render_template, request, jsonify
 import json
 import csv
 import pandas as pd
+from flask import Flask, render_template, request, jsonify
+
+# Ajouter le répertoire racine au PYTHONPATH
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from scripts.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from scripts.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
-from scripts.utils import get_room_position
-from scripts.sensors import list_sensor_files, read_sensor_csv, merge_sensor_data, add_room_geo
+from scripts.utils import get_room_position, cfg
 from scripts.update_live import update_qr, update_localization_files
-from scripts.utils import cfg, get_logger,write_csv_safe
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG,
@@ -114,40 +110,21 @@ pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
 @app.route('/position')
 def get_position():
     """Renvoie la position actuelle fusionnée"""
+    room = request.args.get('room')
+    if not room:
+        return jsonify({"error": "Missing 'room' parameter"}), 400
     try:
         pdr_pos, finger_pos, qr_reset = get_latest_positions()
-        logger.info(f"Positions récupérées - PDR: {pdr_pos}, Fingerprint: {finger_pos}, QR Reset: {qr_reset}")
-        # Recupère le numéro de la salle depuis les paramètres de la requête
-        room = request.args.get('room')
-        if not room:
-            return jsonify({"error": "Missing 'room' parameter"}), 400
-        
-        # Fusion Kalman
         fused_pos = fuse(pdr_pos, finger_pos, qr_reset, room=room)
-
-        # S'assure que c'est une liste de floats [lat, lon]
-        if fused_pos is not None:
-            pos_list = list(map(float, fused_pos))
-        else:
-            pos_list = [0.0, 0.0]
-            
+        pos_list = list(map(float, fused_pos)) if fused_pos else [0.0, 0.0, 0.0]
         return jsonify({
             "position": pos_list,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sources": {
-                "pdr": pdr_pos is not None,
-                "fingerprint": finger_pos is not None,
-                "qr_reset": qr_reset is not None
-            }
+            "sources": {"pdr": bool(pdr_pos), "fingerprint": bool(finger_pos), "qr_reset": bool(qr_reset)}
         })
-        
     except Exception as e:
-        logger.error(f"Erreur lors de la récupération de position: {e}")
-        return jsonify({
-            "error": str(e),
-            "position": [0.0, 0.0],
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }), 500
+        logger.error(f"Error in /position: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/route')
 def get_route():
@@ -424,48 +401,20 @@ def update_position():
 @app.route('/confirm_position', methods=['POST'])
 def confirm_position():
     """Confirme la position actuelle dans une salle spécifique"""
-    global current_position
-    
-    try:
-        data = request.get_json()
-        if not data or 'room' not in data:
-            return jsonify({"status": "error", "message": "Missing room parameter"}), 400
-
-        room_number = data['room']
-        position = data.get('position', None)
-        
-        normalized_room = normalize_room_id(room_number)
-        if not normalized_room:
-            return jsonify({"status": "error", "message": "Invalid room number"}), 400
-
-        if position is not None:
-            current_position = position
-        else:
-            # Utiliser la position par défaut de la salle
-            try:
-                current_position = get_room_position(normalized_room)
-            except Exception as e:
-                logger.error(f"Erreur récupération position salle: {e}")
-                current_position = [0.0, 0.0]
-
-        # Reset du filtre de Kalman
-        try:
-            reset_kalman()
-        except Exception as e:
-            logger.warning(f"Erreur reset Kalman: {e}")
-
-        return jsonify({
-            "status": "success",
-            "message": f"Position confirmed in room {normalized_room}",
-            "position": current_position
-        })
-        
-    except Exception as e:
-        logger.error(f"Erreur confirmation position: {e}")
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+    data = request.get_json() or {}
+    room = data.get('room')
+    if not room:
+        return jsonify({"status": "error", "message": "Missing room"}), 400
+    normalized = normalize_room_id(room)
+    if not normalized:
+        return jsonify({"status": "error", "message": "Invalid room"}), 400
+    pos = data.get('position')
+    if pos:
+        current = pos
+    else:
+        current = get_room_position(normalized)
+    reset_kalman()
+    return jsonify({"status": "success", "position": current})
 
 @app.route('/health')
 def health_check():

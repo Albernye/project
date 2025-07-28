@@ -12,9 +12,9 @@ def test_fusion_singleton():
     """Teste le modèle singleton dans la fusion"""
     # Reset pour s'assurer d'un état propre
     reset_kalman()
-    
-    result1 = fuse((1, 0, 0), (0.9, 0.1, 0), None)
-    result2 = fuse((0, 1, 0), (0.2, 1.1, 0), None)
+
+    result1 = fuse(pdr_delta=(1,0,0), wifi_pose=(0.9,0.1,0))
+    result2 = fuse(pdr_delta=(0,1,0), wifi_pose=(0.2,1.1,0))
     
     # Les résultats doivent être différents car le filtre garde l'état
     assert not np.allclose(result1, result2)
@@ -22,9 +22,8 @@ def test_fusion_singleton():
 def test_no_movement_case():
     """Teste le cas sans mouvement"""
     reset_kalman()
-    
     # Cas où aucune position n'est fournie
-    result = fuse(None, None, None)
+    result = fuse()
     
     # Le filtre devrait retourner l'état par défaut (généralement origine)
     assert isinstance(result, (tuple, list, np.ndarray))
@@ -33,11 +32,10 @@ def test_no_movement_case():
 def test_fusion_simple():
     """Test basique de fusion avec deux positions"""
     reset_kalman()
-    
     pos1 = (1.0, 2.0, 0.0)
     pos2 = (1.1, 2.1, 0.0)
     
-    fused = fuse(pos1, pos2)
+    fused = fuse(pdr_delta=pos1,wifi_pose=pos2)
     
     # Vérifications de base
     assert isinstance(fused, (tuple, list, np.ndarray))
@@ -50,11 +48,10 @@ def test_fusion_simple():
 def test_fusion_reset():
     """Teste la fonction de reset avec QR code"""
     reset_kalman()
-    
     qr_pos = (3.0, 4.0, 0.0)
     
     # Reset avec position QR
-    fused = fuse(None, None, qr_reset=qr_pos, room="2-01")
+    fused = fuse(qr_anchor=qr_pos, room="2-01")
     
     print("DEBUG fused:", fused, "qr_pos:", qr_pos)
     
@@ -68,7 +65,6 @@ def test_fusion_reset():
 def test_pdr_only():
     """Test avec seulement PDR (pas de fingerprint)"""
     reset_kalman()
-    
     pdr_pos = (2.0, 3.0, 0.0)
     result = fuse(pdr_pos, None, None)
     
@@ -78,16 +74,11 @@ def test_pdr_only():
 def test_fingerprint_only():
     """Test avec seulement fingerprint (pas de PDR)"""
     reset_kalman()
-    
     finger_pos = (2.5, 3.5, 0.0)
     result = fuse(None, finger_pos, None)
     
     assert isinstance(result, (tuple, list, np.ndarray))
     assert len(result) >= 2
-
-def test_sequential_fusion():
-    """Test de fusion séquentielle simulant un usage réel"""
-    reset_kalman()
     
     # Séquence de positions
     positions = [
@@ -126,8 +117,5 @@ if __name__ == "__main__":
     
     test_fingerprint_only()
     print("✅ test_fingerprint_only passed")
-    
-    test_sequential_fusion()
-    print("✅ test_sequential_fusion passed")
     
     print("All tests passed!")

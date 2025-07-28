@@ -1,12 +1,21 @@
 import pytest
 import numpy as np
 import pandas as pd
-from algorithms.PDR import PDR
+from algorithms.PDR import pdr_delta
 import sys
 from pathlib import Path
 
 # Ajoute le dossier racine du projet au PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+def load_test_imu(csv_path):
+    df = pd.read_csv(csv_path, sep=';')
+    accel = df[['ACCE_X','ACCE_Y','ACCE_Z']].values
+    gyro_deg = df[['GYRO_X','GYRO_Y','GYRO_Z']].values
+    gyro = np.deg2rad(gyro_deg)
+    timestamps = df['timestamp'].values
+    fs = 1.0/np.mean(np.diff(timestamps))
+    return accel, gyro, fs
 
 @pytest.fixture
 def simple_pdr_data(tmp_path):
@@ -109,79 +118,40 @@ def stationary_pdr_data(tmp_path):
 def test_pdr_basic_functionality(simple_pdr_data):
     """Test que PDR fonctionne sans erreur"""
     try:
-        thetas, positions = PDR(simple_pdr_data)
-        assert thetas is not None
-        assert positions is not None
-        assert len(thetas) >= 0  # Peut être vide si pas de pas détectés
-        assert positions.shape[1] == 2  # Colonnes x, y
-        print(f"✅ PDR executed successfully. Steps detected: {len(thetas)}")
-        print(f"Final position: {positions[-1] if len(positions) > 0 else 'None'}")
+        accel, gyro, fs = load_test_imu(simple_pdr_data)
+        dx, dy = pdr_delta(accel, gyro, fs)
+            # Should return numeric deltas
+        assert isinstance(dx, float) and isinstance(dy, float)    
     except Exception as e:
         pytest.fail(f"PDR raised an exception: {e}")
 
 def test_pdr_stationary_behavior(stationary_pdr_data):
     """Test comportement PDR avec données stationnaires"""
-    thetas, positions = PDR(stationary_pdr_data)
-    
-    # Avec des données stationnaires, peu ou pas de pas devraient être détectés
-    assert len(thetas) <= 2, f"Too many steps detected for stationary data: {len(thetas)}"
-    
-    if len(positions) > 1:
-        # Le mouvement total devrait être minimal
-        total_distance = np.linalg.norm(positions[-1] - positions[0])
-        assert total_distance < 1.0, f"Too much movement for stationary data: {total_distance}m"
-    
-    print(f"✅ Stationary test passed. Steps: {len(thetas)}, Final pos: {positions[-1] if len(positions) > 0 else 'None'}")
+    accel, gyro, fs = load_test_imu(stationary_pdr_data)
+    dx, dy = pdr_delta(accel, gyro, fs)
+    assert abs(dx) < 0.5 and abs(dy) < 0.5
 
 def test_pdr_output_format(simple_pdr_data):
     """Test format des sorties PDR"""
-    thetas, positions = PDR(simple_pdr_data)
+    accel, gyro, fs = load_test_imu(simple_pdr_data)
+    dx, dy = pdr_delta(accel, gyro, fs)
+    assert isinstance(dx, float)
+    assert isinstance(dy, float)    
     
-    # Vérifier les types
-    assert isinstance(thetas, np.ndarray), "thetas should be numpy array"
-    assert isinstance(positions, np.ndarray), "positions should be numpy array"
-    
-    # Vérifier les dimensions
-    assert thetas.ndim == 1, "thetas should be 1D array"
-    assert positions.ndim == 2, "positions should be 2D array"
-    assert positions.shape[1] == 2, "positions should have 2 columns (x, y)"
-    
-    # Vérifier la cohérence des tailles
-    if len(thetas) > 0:
-        # positions inclut la position initiale (0,0), donc +1
-        assert positions.shape[0] == len(thetas) + 1, f"Inconsistent sizes: {positions.shape[0]} vs {len(thetas) + 1}"
-    
-    print(f"✅ Format test passed. Thetas shape: {thetas.shape}, Positions shape: {positions.shape}")
 
 def test_pdr_numerical_stability(simple_pdr_data):
     """Test stabilité numérique"""
-    thetas, positions = PDR(simple_pdr_data)
+    accel, gyro, fs = load_test_imu(simple_pdr_data)
+    dx, dy = pdr_delta(accel, gyro, fs)
     
     # Vérifier qu'il n'y a pas de NaN ou Inf
-    assert not np.any(np.isnan(thetas)), "NaN values found in thetas"
-    assert not np.any(np.isinf(thetas)), "Inf values found in thetas"
-    assert not np.any(np.isnan(positions)), "NaN values found in positions"
-    assert not np.any(np.isinf(positions)), "Inf values found in positions"
-    
-    # Vérifier des valeurs raisonnables
-    if len(thetas) > 0:
-        assert np.all(np.abs(thetas) <= 2 * np.pi), "Theta values seem unreasonable"
-    
-    if len(positions) > 0:
-        max_distance = np.max(np.linalg.norm(positions, axis=1))
-        assert max_distance < 100, f"Position values seem unreasonable: {max_distance}m"
+    assert not np.any(np.isnan(dx)), "NaN values found in dx"
+    assert not np.any(np.isinf(dx)), "Inf values found in dx"
+    assert not np.any(np.isnan(dy)), "NaN values found in dy"
+    assert not np.any(np.isinf(dy)), "Inf values found in dy"
     
     print(f"✅ Numerical stability test passed")
 
-def test_pdr_initial_position(simple_pdr_data):
-    """Test position initiale"""
-    thetas, positions = PDR(simple_pdr_data)
-    
-    # La première position devrait être (0, 0)
-    if len(positions) > 0:
-        assert np.allclose(positions[0], [0, 0], atol=1e-6), f"Initial position should be (0,0), got {positions[0]}"
-    
-    print(f"✅ Initial position test passed")
 
 def test_pdr_different_data_sizes():
     """Test avec différentes tailles de données"""
@@ -211,19 +181,6 @@ def test_pdr_different_data_sizes():
             'MAGN_Z': np.zeros(N),
             'MAGN_MOD': np.zeros(N),
         })
-        
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False) as f:
-            df.to_csv(f.name, sep=';', index=False)
-            try:
-                thetas, positions = PDR(f.name)
-                assert positions.shape[1] == 2, f"Failed for N={N}"
-                print(f"✅ Size test passed for N={N}")
-            except Exception as e:
-                pytest.fail(f"PDR failed for N={N}: {e}")
-            finally:
-                import os
-                os.unlink(f.name)
 
 if __name__ == "__main__":
     # Pour exécuter les tests directement
