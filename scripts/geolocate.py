@@ -1,73 +1,145 @@
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 import logging
-from algorithms.fingerprint import fingerprint
+import pandas as pd
+import numpy as np
+
+from algorithms.fingerprint import (get_last_position, ll_to_local, set_origin)
 from algorithms.PDR import pdr_delta
-from algorithms.filters import KalmanFilter,load_imu
-from scripts.utils import (cfg, read_json_safe)
+from algorithms.filters import load_imu
+from scripts.utils import cfg, read_json_safe
+
+# Optional simulation import
+if cfg.USE_SIMULATED_IMU:
+    from scripts.navigation_simulation import simulate_movement
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def setup_paths():
+def setup_paths() -> dict:
     """Retourne les chemins des fichiers live à charger."""
     return {
-        'pdr_file'     : cfg.PDR_TRACE,
-        'knn_train'    : cfg.STATS_DIR / cfg.GLOBAL_KNN,
-        'fingerprints' : cfg.FP_CURRENT,
-        'qr_events'    : cfg.QR_EVENTS,
+        'pdr_file': cfg.PDR_TRACE,
+        'knn_train': cfg.STATS_DIR / cfg.GLOBAL_KNN,
+        'fingerprints': cfg.FP_CURRENT,
+        'qr_events': cfg.QR_EVENTS,
     }
 
-def get_last_qr_position(qr_events_path: Path) -> Optional[tuple]:
-    """Renvoie la position du dernier événement QR, ou None."""
-    try:
+
+def initialize_coordinate_system(lon: float = None, lat: float = None) -> None:
+    """
+    Initialise le système de coordonnées locales.
+    À appeler une seule fois au début de l'application.
+    """
+    origin_lon = lon if lon is not None else cfg.DEFAULT_POSXY[0]
+    origin_lat = lat if lat is not None else cfg.DEFAULT_POSXY[1]
+    set_origin(origin_lon, origin_lat)
+    logger.info(f"Origine définie à ({origin_lon}, {origin_lat})")
+
+
+def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[Tuple[float, float]]:
+    """Renvoie la position géographique du dernier événement QR."""
+    if qr_events_path:
         events = read_json_safe(qr_events_path)
-        if not events:
-            logger.warning("Aucun événement QR trouvé")
-            return None
-
-        last_event = events[-1]
-        position = last_event.get('position')
-
-        if not position or not isinstance(position, (list, tuple)):
-            logger.error(f"Position QR invalide: {position}")
-            return None
-
-        if len(position) < 2:
-            logger.error(f"Position QR trop courte: {position}")
-            return None
-
-        # Conversion en float et validation
-        try:
-            lon, lat = float(position[0]), float(position[1])
-            logger.info(f"Position QR récupérée: ({lon}, {lat})")
-            return (lon, lat)
-        except (ValueError, TypeError) as e:
-            logger.error(f"Position QR non numérique: {position}")
-            return None
-
-    except Exception as e:
-        logger.error(f"Erreur lors de la lecture des événements QR: {e}")
+    elif events is None:
+        logger.warning("Aucun événement fourni.")
         return None
 
+    if not events:
+        logger.warning("Aucun événement QR.")
+        return None
 
-def get_latest_positions() -> tuple:
-    """
-    Récupère les 3 sources de position :
-      - PDR (via PDR(paths['pdr_file']))
-      - fingerprinting WiFi (via fingerprint(...))
-      - dernier reset QR (dernier item de qr_events.json)
-    Renvoie un tuple (pdr_pos, finger_pos, qr_pos) où chaque pos est
-    soit (lat,lon) soit None.
-    """
-    paths = setup_paths()
+    qr_events = []
+    for idx, event in enumerate(events):
+        if event.get("type") == "qr":
+            position = event.get("position")
+            if isinstance(position, list) and len(position) == 2:
+                qr_events.append((event, idx))  # Stocker avec l'index original
 
-    # Load sensor logs
-    accel, gyro, fs = load_imu(cfg.PDR_TRACE)  
+    if not qr_events:
+        logger.warning("Aucun événement QR valide trouvé.")
+        return None
+
+    # Trier les événements QR par timestamp, puis par leur position dans la liste d'origine
+    qr_events_sorted = sorted(qr_events, key=lambda x: (x[0]["timestamp"], x[1]))
+    last_qr_event = qr_events_sorted[-1][0]  # Récupérer l'événement
+
+    position = last_qr_event["position"]
+
+    try:
+        lon, lat = map(float, position)
+        logger.info(f"QR position: ({lon}, {lat})")
+        return lon, lat
+    except Exception as e:
+        logger.error(f"Position QR invalide: {position}, erreur: {e}")
+        return None
+
+def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
+    """
+    Récupère les dernières positions : PDR, WiFi, QR.
+    Retourne trois tuples ou None.
+    """
+    # PDR
+    if cfg.USE_SIMULATED_IMU:
+        duration, fs = cfg.SIM_DURATION, cfg.SIM_FS
+        accel, gyro, times = simulate_movement(duration, fs)
+        fs = 1.0 / np.mean(np.diff(times))
+    else:
+        accel, gyro, fs = load_imu(cfg.PDR_TRACE)
     dx, dy = pdr_delta(accel, gyro, fs)
-    pdr_pos=(dx,dy,0)
+    pdr_pos = (dx, dy, cfg.DEFAULT_FLOOR)
 
-    wifi_pos = fingerprint(str(cfg.STATS_DIR/cfg.GLOBAL_KNN), str(cfg.FP_CURRENT))
-    qr_pos = get_last_qr_position(cfg.QR_EVENTS)
+    # WiFi
+    try:
+        x, y, floor = get_last_position(
+            str(cfg.STATS_DIR / cfg.GLOBAL_KNN),
+            str(cfg.FP_CURRENT),
+            kP=3, kZ=3, R=10.0
+        )
+        wifi_pos = (x, y, floor)
+    except Exception:
+        wifi_pos = None
+
+    # QR
+    qr_geo = get_last_qr_position(cfg.QR_EVENTS)
+    qr_pos = None
+    if qr_geo:
+        x, y = ll_to_local(*qr_geo)
+        qr_pos = (x, y, cfg.DEFAULT_FLOOR)
+
     return pdr_pos, wifi_pos, qr_pos
+
+
+class PositionTracker:
+    """Gère la position unifiée selon WiFi > QR > PDR"""
+    def __init__(self):
+        self.current: Optional[Tuple[float, float, int]] = None
+
+    def update(self) -> Optional[Tuple[float, float, int]]:
+        pdr, wifi, qr = get_latest_positions()
+        if wifi:
+            self.current = wifi
+        elif qr:
+            self.current = qr
+        elif pdr and self.current:
+            dx, dy, _ = pdr
+            x, y, floor = self.current
+            self.current = (x + dx, y + dy, floor)
+        else:
+            logger.warning("Mise à jour impossible")
+        logger.info(f"Position maj: {self.current}")
+        return self.current
+
+    def reset(self, pos: Tuple[float, float, int]) -> None:
+        self.current = pos
+        logger.info(f"Position forcée: {pos}")
+
+
+# Exécution en standalone
+if __name__ == '__main__':
+    initialize_coordinate_system()
+    tracker = PositionTracker()
+    for _ in range(5):
+        tracker.update()
+    print(f"Final: {tracker.current}")

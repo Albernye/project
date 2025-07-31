@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import pandas as pd
 from unittest.mock import patch
-from algorithms.fingerprint import fingerprint, set_origin
+from algorithms.fingerprint import set_origin,get_last_position
 import sys
 from pathlib import Path
 # Ajoute le dossier racine du projet au PYTHONPATH
@@ -34,7 +34,7 @@ def test_fingerprint_predictions():
     # Use mock to simulate reading CSV files
     set_origin(mock_train_data['long'].iloc[0],mock_fp_data['lat'].iloc[0])
     with patch('pandas.read_csv', side_effect=[mock_fp_data, mock_train_data]):
-        result = fingerprint(knntrainfile, FPfile, kP=kP, kZ=kZ)
+        result = get_last_position(knntrainfile, FPfile, kP, kZ, 10)
         # Should return a 3‑tuple (x, y, floor)
         assert isinstance(result, tuple) and len(result) == 3
         x, y, f = result

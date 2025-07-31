@@ -48,6 +48,9 @@ class Config:
     DEFAULT_POSXY  = (0.0, 0.0)
     DEFAULT_RSSI   = -80
     DEFAULT_AP_N   = 5
+    USE_SIMULATED_IMU = True
+    SIM_DURATION      = 10.0
+    SIM_FS            = 100.0
 
 cfg = Config()
 
