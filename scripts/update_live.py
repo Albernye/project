@@ -25,6 +25,14 @@ def update_pdr(room, logger):
         logger.warning("PDR default created")
 
 def update_fp(room, logger):
+    # if we don’t yet have a global knn_train.csv, skip fingerprint
+    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    if not knn_path.exists():
+        logger.warning(f"No knn_train.csv found at {knn_path}, skipping FP update")
+        # write default RSSI row so geolocate sees “no FP data”
+        write_csv_safe(pd.DataFrame([default_fingerprint_row()]), cfg.FP_CURRENT)
+        return
+
     src = cfg.RECORDINGS_DIR / f"door_{room.replace('-','_')}" / 'latest.csv'
     dst = cfg.FP_CURRENT
     df  = read_csv_safe(src)

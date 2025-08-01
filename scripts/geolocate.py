@@ -8,11 +8,7 @@ from algorithms.fingerprint import (get_last_position, ll_to_local, set_origin)
 from algorithms.PDR import pdr_delta
 from algorithms.filters import load_imu
 from scripts.utils import cfg, read_json_safe
-
-# Optional simulation import
-if cfg.USE_SIMULATED_IMU:
-    from scripts.navigation_simulation import simulate_movement
-
+from simulation.simu_pdr import simulate_imu_movement
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -83,7 +79,7 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
     # PDR
     if cfg.USE_SIMULATED_IMU:
         duration, fs = cfg.SIM_DURATION, cfg.SIM_FS
-        accel, gyro, times = simulate_movement(duration, fs)
+        accel, gyro, times = simulate_imu_movement(duration, fs)
         fs = 1.0 / np.mean(np.diff(times))
     else:
         accel, gyro, fs = load_imu(cfg.PDR_TRACE)
@@ -91,15 +87,19 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
     pdr_pos = (dx, dy, cfg.DEFAULT_FLOOR)
 
     # WiFi
-    try:
-        x, y, floor = get_last_position(
-            str(cfg.STATS_DIR / cfg.GLOBAL_KNN),
-            str(cfg.FP_CURRENT),
-            kP=3, kZ=3, R=10.0
-        )
-        wifi_pos = (x, y, floor)
-    except Exception:
-        wifi_pos = None
+    # fingerprint may not yet be configured
+    wifi_pos = None
+    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
+        try:
+            x, y, floor = get_last_position(
+                str(knn_path),
+                str(cfg.FP_CURRENT),
+                kP=3, kZ=3, R=10.0
+            )
+            wifi_pos = (x, y, floor)
+        except Exception as e:
+            logger.warning(f"Fingerprint failed: {e}")
 
     # QR
     qr_geo = get_last_qr_position(cfg.QR_EVENTS)

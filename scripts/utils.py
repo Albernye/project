@@ -45,7 +45,7 @@ class Config:
     GLOBAL_KNN     = "knn_train.csv"
     
     DEFAULT_FLOOR  = 2
-    DEFAULT_POSXY  = (0.0, 0.0)
+    DEFAULT_POSXY  = (2.194291,41.406351)
     DEFAULT_RSSI   = -80
     DEFAULT_AP_N   = 5
     USE_SIMULATED_IMU = True
