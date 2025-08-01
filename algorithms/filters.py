@@ -1,81 +1,62 @@
 # This code implements a Kalman Filter for estimating 2D position and floor level
 
 import numpy as np
+import pandas as pd
+import logging
+
+logger = logging.getLogger(__name__)
+
+def load_imu(pdr_file):
+    """Load IMU data from CSV and return accel (Nx3), gyro (Nx3, rad/s), and sampling rate fs."""
+    df = pd.read_csv(pdr_file, delimiter=';')
+    accel = df[['ACCE_X','ACCE_Y','ACCE_Z']].values
+    gyro_deg = df[['GYRO_X','GYRO_Y','GYRO_Z']].values
+    gyro = np.deg2rad(gyro_deg)
+    timestamps = df['timestamp'].values.astype(float)
+    dt = np.diff(timestamps)
+    fs = 1.0 / np.mean(dt) if len(dt) > 1 else None
+    return accel, gyro, fs
 
 class KalmanFilter:
     """
-    Kalman Filter for 2D position and floor estimation.
-    State vector: [x, y, floor]^T
-    Assumes simple motion model: x_k = x_{k-1} + delta (from PDR)
-    Measurement model: z_k = H x_k + v (identity)
+    3-state Kalman Filter: [x, y, floor]
     """
-    def __init__(self, Q=None, R=None):
-        # State dimension
+    def __init__(self,
+                 Q=np.diag([0.1,0.1,0.01]),
+                 R_wifi=np.diag([2.0,2.0,0.1]),
+                 R_qr=np.diag([0.01,0.01,0.01])):
         self.dim = 3
-        # Initial state (x, y, floor)
-        self.x = np.zeros((self.dim, 1))
-        # Initial covariance
-        self.P = np.eye(self.dim) * 1.0
-        # Process noise covariance
-        self.Q = Q if Q is not None else np.eye(self.dim) * 0.1
-        # Measurement noise covariance
-        self.R = R if R is not None else np.eye(self.dim) * 2.0
-        # Measurement matrix (identity)
-        self.H = np.eye(self.dim)
-        # Angular velocity for rotation compensation
-        self.omega = 0.5  # Default value for floor transition
+        self.x = np.zeros((3,1))
+        self.P = np.eye(3)
+        self.Q = Q
+        self.R_wifi = R_wifi
+        self.R_qr = R_qr
+        self.H = np.eye(3)
 
-    def reset_state(self, position):
-        """
-        Reset state to given absolute position (tuple or list).
-        Also resets covariance to initial values.
-        """
-        self.x = np.array(position, dtype=float).reshape((self.dim, 1))
-        self.P = np.eye(self.dim) * 1.0
+    def reset_state(self, state: tuple):
+        if len(state)!=3: raise ValueError
+        self.x = np.array(state, float).reshape(3,1)
+        self.P = np.eye(3)
+        logger.info(f"Filter reset to {state}")
 
-    def predict(self, pdr_delta):
-        """
-        Prediction step: incorporate PDR delta movement.
-        pdr_delta: tuple or list (dx, dy, dfloor)
-        """
-        # Apply rotation compensation for floor transitions
-        dx, dy, dfloor = pdr_delta
-        if dfloor != 0:
-            # Adjust movement for spiral staircase rotation
-            theta = self.omega * dfloor
-            rot_matrix = np.array([
-                [np.cos(theta), -np.sin(theta), 0],
-                [np.sin(theta), np.cos(theta), 0],
-                [0, 0, 1]
-            ])
-            rotated_delta = rot_matrix @ np.array([dx, dy, dfloor])
-            dx, dy, dfloor = rotated_delta
+    def predict(self, delta: tuple, Q_override=None):
+        dx,dy,df = (list(delta)+[0,0,0])[:3]
+        u = np.array([dx,dy,df]).reshape(3,1)
+        self.x += u
+        Q = Q_override if Q_override is not None else self.Q
+        self.P += Q
+        logger.debug(f"Predict {delta}, x={self.x.flatten()}")
 
-        delta = np.array([dx, dy, dfloor], dtype=float).reshape((self.dim, 1))
-        self.x = self.x + delta
-        # Covariance prediction: P = P + Q
-        self.P = self.P + self.Q
+    def update(self, meas: tuple, source: str='wifi', R_override=None):
+        if len(meas)!=3: raise ValueError
+        z = np.array(meas,float).reshape(3,1)
+        R = R_override if R_override is not None else (self.R_qr if source=='qr' else self.R_wifi)
+        y = z - self.H@self.x
+        S = self.H@self.P@self.H.T + R
+        K = self.P@self.H.T @ np.linalg.inv(S)
+        self.x += K@y
+        self.P = (np.eye(3)-K@self.H)@self.P
+        logger.debug(f"Update {source} {meas}, x={self.x.flatten()}")
 
-    def update(self, measurement):
-        """
-        Update step with fingerprint measurement.
-        measurement: tuple or list (x, y, floor)
-        """
-        z = np.array(measurement, dtype=float).reshape((self.dim, 1))
-        # Innovation: y = z - H x
-        y = z - self.H.dot(self.x)
-        # Innovation covariance: S = H P H^T + R
-        S = self.H.dot(self.P).dot(self.H.T) + self.R
-        # Kalman gain: K = P H^T S^{-1}
-        K = self.P.dot(self.H.T).dot(np.linalg.inv(S))
-        # State update: x = x + K y
-        self.x = self.x + K.dot(y)
-        # Covariance update: P = (I - K H) P
-        I = np.eye(self.dim)
-        self.P = (I - K.dot(self.H)).dot(self.P)
-
-    def get_state(self):
-        """
-        Returns current state estimate as tuple (x, y, floor).
-        """
+    def get_state(self) -> tuple:
         return tuple(self.x.flatten())

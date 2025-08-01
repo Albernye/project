@@ -1,38 +1,145 @@
-import os
-import json
-from config import config
-from algorithms.fingerprint import fingerprint
-from algorithms.PDR import PDR
-from algorithms.filters import KalmanFilter
+from pathlib import Path
+from typing import Optional, Tuple
+import logging
+import pandas as pd
+import numpy as np
 
-# Configuration des chemins
-def setup_paths():
-    project_root = config.get_project_root()
+from algorithms.fingerprint import (get_last_position, ll_to_local, set_origin)
+from algorithms.PDR import pdr_delta
+from algorithms.filters import load_imu
+from scripts.utils import cfg, read_json_safe
+from simulation.simu_pdr import simulate_imu_movement
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def setup_paths() -> dict:
+    """Retourne les chemins des fichiers live à charger."""
     return {
-        'pdr_file': os.path.join(project_root, 'data', 'pdr_traces', 'current.csv'),
-        'knn_train': os.path.join(project_root, 'data', 'stats', 'knn_train.csv'),
-        'fingerprints': os.path.join(project_root, 'data', 'recordings', 'current_fingerprints.csv'),
-        'qr_events': os.path.join(project_root, 'data', 'qr_events.json')
+        'pdr_file': cfg.PDR_TRACE,
+        'knn_train': cfg.STATS_DIR / cfg.GLOBAL_KNN,
+        'fingerprints': cfg.FP_CURRENT,
+        'qr_events': cfg.QR_EVENTS,
     }
 
 
-def get_latest_positions(paths):
+def initialize_coordinate_system(lon: float = None, lat: float = None) -> None:
     """
-    Récupère la dernière position PDR et la position fingerprint kNN, plus le dernier reset QR.
+    Initialise le système de coordonnées locales.
+    À appeler une seule fois au début de l'application.
     """
-    # --- PDR offline ---
-    thetas, positions = PDR(paths['pdr_file'])
-    if positions is None or len(positions) == 0:
-        pdr_pos = None
-    else:
-        pdr_pos = tuple(positions[-1])
+    origin_lon = lon if lon is not None else cfg.DEFAULT_POSXY[0]
+    origin_lat = lat if lat is not None else cfg.DEFAULT_POSXY[1]
+    set_origin(origin_lon, origin_lat)
+    logger.info(f"Origine définie à ({origin_lon}, {origin_lat})")
 
-    # --- Wi‑Fi fingerprinting kNN ---
-    kP = config.get('knn.kP', 3)
-    kZ = config.get('knn.kZ', 3)
-    R  = config.get('floor.threshold', 5.0)
-    finger_preds = fingerprint(
-        knntrainfile=paths['knn_train'],
-        FPfile=paths['fingerprints'],
-        kP=kP, kZ=kZ, R=R
-    )
+
+def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[Tuple[float, float]]:
+    """Renvoie la position géographique du dernier événement QR."""
+    if qr_events_path:
+        events = read_json_safe(qr_events_path)
+    elif events is None:
+        logger.warning("Aucun événement fourni.")
+        return None
+
+    if not events:
+        logger.warning("Aucun événement QR.")
+        return None
+
+    qr_events = []
+    for idx, event in enumerate(events):
+        if event.get("type") == "qr":
+            position = event.get("position")
+            if isinstance(position, list) and len(position) == 2:
+                qr_events.append((event, idx))  # Stocker avec l'index original
+
+    if not qr_events:
+        logger.warning("Aucun événement QR valide trouvé.")
+        return None
+
+    # Trier les événements QR par timestamp, puis par leur position dans la liste d'origine
+    qr_events_sorted = sorted(qr_events, key=lambda x: (x[0]["timestamp"], x[1]))
+    last_qr_event = qr_events_sorted[-1][0]  # Récupérer l'événement
+
+    position = last_qr_event["position"]
+
+    try:
+        lon, lat = map(float, position)
+        logger.info(f"QR position: ({lon}, {lat})")
+        return lon, lat
+    except Exception as e:
+        logger.error(f"Position QR invalide: {position}, erreur: {e}")
+        return None
+
+def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
+    """
+    Récupère les dernières positions : PDR, WiFi, QR.
+    Retourne trois tuples ou None.
+    """
+    # PDR
+    if cfg.USE_SIMULATED_IMU:
+        duration, fs = cfg.SIM_DURATION, cfg.SIM_FS
+        accel, gyro, times = simulate_imu_movement(duration, fs)
+        fs = 1.0 / np.mean(np.diff(times))
+    else:
+        accel, gyro, fs = load_imu(cfg.PDR_TRACE)
+    dx, dy = pdr_delta(accel, gyro, fs)
+    pdr_pos = (dx, dy, cfg.DEFAULT_FLOOR)
+
+    # WiFi
+    # fingerprint may not yet be configured
+    wifi_pos = None
+    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
+        try:
+            x, y, floor = get_last_position(
+                str(knn_path),
+                str(cfg.FP_CURRENT),
+                kP=3, kZ=3, R=10.0
+            )
+            wifi_pos = (x, y, floor)
+        except Exception as e:
+            logger.warning(f"Fingerprint failed: {e}")
+
+    # QR
+    qr_geo = get_last_qr_position(cfg.QR_EVENTS)
+    qr_pos = None
+    if qr_geo:
+        x, y = ll_to_local(*qr_geo)
+        qr_pos = (x, y, cfg.DEFAULT_FLOOR)
+
+    return pdr_pos, wifi_pos, qr_pos
+
+
+class PositionTracker:
+    """Gère la position unifiée selon WiFi > QR > PDR"""
+    def __init__(self):
+        self.current: Optional[Tuple[float, float, int]] = None
+
+    def update(self) -> Optional[Tuple[float, float, int]]:
+        pdr, wifi, qr = get_latest_positions()
+        if wifi:
+            self.current = wifi
+        elif qr:
+            self.current = qr
+        elif pdr and self.current:
+            dx, dy, _ = pdr
+            x, y, floor = self.current
+            self.current = (x + dx, y + dy, floor)
+        else:
+            logger.warning("Mise à jour impossible")
+        logger.info(f"Position maj: {self.current}")
+        return self.current
+
+    def reset(self, pos: Tuple[float, float, int]) -> None:
+        self.current = pos
+        logger.info(f"Position forcée: {pos}")
+
+
+# Exécution en standalone
+if __name__ == '__main__':
+    initialize_coordinate_system()
+    tracker = PositionTracker()
+    for _ in range(5):
+        tracker.update()
+    print(f"Final: {tracker.current}")

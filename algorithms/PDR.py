@@ -2,14 +2,10 @@
 
 import pandas as pd
 import numpy as np
-import glob
-import warnings
-import math
-import csv
 import matplotlib.pyplot as plt
-import scipy.linalg
 from scipy.signal import butter, filtfilt
 from scipy.linalg import expm
+
 
 def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
     # Calculate sample rate
@@ -27,215 +23,149 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
     threshold_acc = 0.4  # Threshold of 0.4 m/s^2
     threshold_acc_discard = 2.0  # Threshold above which indicates excessive movement
     gravity = 9.8
-    Acc_filt_binary = np.zeros(len(magnitude))
-    Acc_filt_detrend = np.zeros(len(magnitude))
+    Acc_filt_binary = np.zeros(num_samples)
+    Acc_filt_detrend = np.zeros(num_samples)
     
-    for ii in range(1, len(magnitude)):
+    for ii in range(1, num_samples):
         gravity = 0.999 * gravity + 0.001 * magnitude[ii]  # Experimental gravity calculation
         Acc_filt_detrend[ii] = Acc_mag_filt[ii] - gravity
         
         if Acc_filt_detrend[ii] > threshold_acc and Acc_filt_detrend[ii] < threshold_acc_discard:
             Acc_filt_binary[ii] = 1  # Up phases of body (start step)
-        else:
-            if Acc_filt_detrend[ii] < -threshold_acc:
-                if Acc_filt_binary[ii-1] == 1:
-                    Acc_filt_binary[ii] = 0
-                else:
-                    Acc_filt_binary[ii] = -1  # Down phases of body (end step)
+        elif Acc_filt_detrend[ii] < -threshold_acc:
+            if Acc_filt_binary[ii-1] == 1:
+                Acc_filt_binary[ii] = 0
             else:
-                Acc_filt_binary[ii] = 0  # Between upper and lower threshold
-
-    step_count = 0
-    StanceBegins_idx = []
-    time_step= []
-    StepDect = np.zeros(len(magnitude))
-    steps = np.full(len(magnitude), np.nan)
-    
-    window = int(0.4 * freq_Acc)  # Samples in window to consider 0.4 seconds
-    
-    for ii in range(window + 2, len(magnitude)):
-        if (Acc_filt_binary[ii] == -1 and Acc_filt_binary[ii - 1] == 0 and np.sum(Acc_filt_binary[ii - window:ii - 2]) > 1):
-            StepDect[ii] = 1
-            time_step.append(time[ii])
-            
-            step_count += 1
-            StanceBegins_idx.append(ii)
-            
-        if StepDect[ii]:
-            steps[ii] = 0
+                Acc_filt_binary[ii] = -1  # Down phases of body (end step)
         else:
-            steps[ii] = np.nan
-    
-    
-    # All support samples
-    StancePhase = np.zeros(num_samples)
-    for ii in StanceBegins_idx:
-        StancePhase[ii:ii + 10] = np.ones(10)  # Assume support phase is the 10 following samples after start of support phase (StanceBegins_idx)
+            Acc_filt_binary[ii] = 0  # Between thresholds
 
-    Num_steps = len(StanceBegins_idx)  # Number of counted steps
+    StanceBegins_idx = []
+    StepDect = np.zeros(num_samples)
+    steps = np.full(num_samples, np.nan)
+    window = int(0.4 * freq_Acc)  # Samples in window to consider 0.4 seconds
+
+    for ii in range(window + 2, num_samples):
+        if (Acc_filt_binary[ii] == -1 and Acc_filt_binary[ii - 1] == 0 \
+            and np.sum(Acc_filt_binary[ii - window:ii - 2]) > 1):
+            StepDect[ii] = 1
+            StanceBegins_idx.append(ii)
+        steps[ii] = 0 if StepDect[ii] else np.nan
+    
+    # Build StancePhase, guarding end-of-array
+    StancePhase = np.zeros(num_samples)
+    for idx in StanceBegins_idx:
+        end = min(idx + 10, num_samples)
+        StancePhase[idx:end] = 1
+
+    Num_steps = len(StanceBegins_idx)
     
     # Plotting
     if plot:
         plt.figure(fig_idx)
         plt.plot(time, magnitude, 'r-', label='|Acc|')
         plt.plot(time, Acc_mag_filt, 'b-', label='lowpass(|Acc|)')
-        plt.plot(time, Acc_filt_detrend, 'c-', label='detrend(lowpass(|Acc|))')
+        plt.plot(time, Acc_filt_detrend, 'c-', label='detrend')
         plt.plot(time, Acc_filt_binary, 'gx-', label='Binary')
         plt.plot(time, steps, 'ro', markersize=8, label='Detected Steps')
-        plt.title('"SL+theta PDR": Accelerometer processing for Step detection')
-        plt.xlabel('time (seconds)')
+        plt.title('Accelerometer Step Detection')
+        plt.xlabel('Time (s)')
         plt.ylabel('Acceleration')
         plt.legend()
         plt.show()
     
-    #print(time_step)
-    
     return Num_steps, StanceBegins_idx, StancePhase
+
 
 def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_phase, ver, idx_fig):
     # Constants
-    K = 0.2  # Weinberg constant dependent on each person or walking mode
-
-    # Extracting data sizes and frequencies
-    time_exp=time[-1]-time[0]
-    print(time_exp)
+    K = 0.2  # Weinberg constant
     
+    time_exp = time[-1] - time[0]
     num_samples_acc = acc.shape[0]
-    print(num_samples_acc)
     freq_acc = np.ceil(num_samples_acc / time_exp)
-    print(freq_acc)
-
     num_samples_gyr = gyr.shape[0]
     freq_gyr = np.ceil(num_samples_gyr / time_exp)
-    
-    
 
-    # Step 1: Magnitude of accelerometer data
-    m_acc = np.sqrt(acc[:, 0]**2 + acc[:, 1]**2 + acc[:, 2]**2)
+    if num_samples_acc != num_samples_gyr:
+        min_samples = min(num_samples_acc, num_samples_gyr)
+        acc = acc[:min_samples]
+        gyr = gyr[:min_samples]
+        num_samples_acc = num_samples_gyr = min_samples
 
-    # Step 2: Low-pass filter
-    cutoff_freq = 3  # Hz
-    b, a = butter(4, cutoff_freq / freq_acc, btype='low')
+    # Step 1: Magnitude
+    m_acc = np.linalg.norm(acc, axis=1)
+    # Step 2: Low-pass
+    b, a = butter(4, 3 / (0.5 * freq_acc), btype='low')
     m_acc = filtfilt(b, a, m_acc)
 
-    # Step 3: Weiberg's algorithm for stride length estimation
+    # Step 3: Stride lengths
     stride_lengths = []
-    for i in range(len(step_event)):
-        sample_step_event = step_event[i]
-        acc_max = np.max(m_acc[:sample_step_event])
-        acc_min = np.min(m_acc[:sample_step_event])
-        bounce = (acc_max - acc_min)**(1/4)
-        stride_length = bounce * K * 2
-        stride_lengths.append(stride_length)
+    for ev in step_event:
+        start = max(ev - 10, 0)
+        end = min(ev + 10, num_samples_acc)
+        acc_max = np.max(m_acc[start:end])
+        acc_min = np.min(m_acc[start:end])
+        bounce = (acc_max - acc_min)**0.25
+        stride_lengths.append(bounce * K * 2)
 
-    # Step 4: Heading direction (Thetas) after each step
-    # Initialize rotation matrix at initial sample
-    w = np.arange(0, np.ceil(20 * freq_acc), dtype=int)  # Window for initial rest assumption
-    acc_mean = np.mean(acc[w, :], axis=0)
-    roll_ini = np.arctan2(acc_mean[1], acc_mean[2]) * 180 / np.pi
-    pitch_ini = -np.arctan2(acc_mean[0], np.sqrt(acc_mean[1]**2 + acc_mean[2]**2)) * 180 / np.pi
-    yaw_ini = 0
-    rot_gs = np.zeros((3, 3, num_samples_acc))
-    rot_z = np.array([[np.cos(yaw_ini*np.pi/180), -np.sin(yaw_ini*np.pi/180), 0],
-                      [np.sin(yaw_ini*np.pi/180), np.cos(yaw_ini*np.pi/180), 0],
-                      [0, 0, 1]])
-    rot_y = np.array([[np.cos(pitch_ini*np.pi/180), 0, np.sin(pitch_ini*np.pi/180)],
-                      [0, 1, 0],
-                      [-np.sin(pitch_ini*np.pi/180), 0, np.cos(pitch_ini*np.pi/180)]])
-    rot_x = np.array([[1, 0, 0],
-                      [0, np.cos(roll_ini*np.pi/180), -np.sin(roll_ini*np.pi/180)],
-                      [0, np.sin(roll_ini*np.pi/180), np.cos(roll_ini*np.pi/180)]])
-    rot_gs[:, :, 0] = np.dot(rot_z, np.dot(rot_y, rot_x))
+    # Heading
+    w = int(min(np.ceil(20 * freq_acc), num_samples_acc))
+    acc_mean = np.mean(acc[:w, :], axis=0)
+    roll = np.arctan2(acc_mean[1], acc_mean[2])
+    pitch = -np.arctan2(acc_mean[0], np.hypot(acc_mean[1], acc_mean[2]))
+    yaw = 0
 
-    # Propagate rotation matrix to all samples using gyroscope data
-    for i in range(1, num_samples_gyr):
-        skew_gyros = np.array([[0, -gyr[i, 2], gyr[i, 1]],
-                               [gyr[i, 2], 0, -gyr[i, 0]],
-                               [-gyr[i, 1], gyr[i, 0], 0]])  # Skew-symmetric matrix
-        rot_gs[:, :, i] = np.dot(rot_gs[:, :, i - 1], expm(skew_gyros / freq_gyr))  # Using matrix exponential
+    Rz = np.array([[np.cos(yaw), -np.sin(yaw), 0],[np.sin(yaw), np.cos(yaw), 0],[0,0,1]])
+    Ry = np.array([[np.cos(pitch),0,np.sin(pitch)],[0,1,0],[-np.sin(pitch),0,np.cos(pitch)]])
+    Rx = np.array([[1,0,0],[0,np.cos(roll),-np.sin(roll)],[0,np.sin(roll),np.cos(roll)]])
 
-    # Calculate heading direction (Thetas)
+    rot = np.zeros((3,3,num_samples_acc))
+    rot[:,:,0] = Rz @ Ry @ Rx
+    dt = 1.0 / freq_gyr
+    for i in range(1, num_samples_acc):
+        gyro_i = gyr[i] * (np.pi/180 if np.max(np.abs(gyr[i])) > 10 else 1)
+        S = np.array([[0,-gyro_i[2],gyro_i[1]],[gyro_i[2],0,-gyro_i[0]],[-gyro_i[1],gyro_i[0],0]])
+        rot[:,:,i] = rot[:,:,i-1] @ expm(S * dt)
+
     thetas = np.zeros(len(step_event))
-    step_event_gyro = np.floor(np.array(step_event) * freq_gyr / freq_acc).astype(int)
-    for k in range(len(step_event)):
-        thetas[k] = np.arctan2(rot_gs[1, 0, step_event_gyro[k]], rot_gs[0, 0, step_event_gyro[k]])
+    idxs = np.clip((np.array(step_event) * freq_gyr / freq_acc).astype(int), 0, num_samples_acc-1)
+    for i, idx in enumerate(idxs):
+        thetas[i] = np.arctan2(rot[1,0,idx], rot[0,0,idx])
 
-    # Step 5: Positions after integration (PDR results)
-    positions = np.zeros((len(step_event), 2))
-    for k in range(len(step_event)):
-        if k == 0:
-            positions[k, 0] = stride_lengths[k] * np.cos(thetas[k])
-            positions[k, 1] = stride_lengths[k] * np.sin(thetas[k])
+    # Positions
+    pos = np.zeros((len(step_event),2))
+    for i, theta in enumerate(thetas):
+        if i==0:
+            pos[i] = [stride_lengths[i]*np.cos(theta), stride_lengths[i]*np.sin(theta)]
         else:
-            positions[k, 0] = positions[k - 1, 0] + stride_lengths[k] * np.cos(thetas[k])
-            positions[k, 1] = positions[k - 1, 1] + stride_lengths[k] * np.sin(thetas[k])
-    
-    positions = np.vstack((np.array([0, 0]), positions))  # Adding initial position (0,0)
+            pos[i] = pos[i-1] + [stride_lengths[i]*np.cos(theta), stride_lengths[i]*np.sin(theta)]
+    pos = np.vstack(([0,0], pos))
 
-    # Plotting (if ver is True)
     if ver:
-        #plt.figure(idx_fig)
-        #plt.plot(stride_lengths, 'bo-', label='StrideLengths (m)')
-        #plt.plot(thetas, 'rx-', label='Thetas (rad)')
-        #plt.legend()
-        #plt.title('StrideLengths and Thetas')
-        #plt.xlabel('Steps')
-        #plt.grid(True)
-        #idx_fig += 1
-
         plt.figure(idx_fig)
-        plt.plot(positions[:, 0], positions[:, 1], 'bo-', label='Positions')
-        plt.plot(positions[0, 0], positions[0, 1], 'bs', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.plot(positions[-1, 0], positions[-1, 1], 'bo', markersize=8, markerfacecolor=[0, 0, 1])
-        plt.title('Positions')
-        plt.xlabel('East (m)')
-        plt.ylabel('North (m)')
-        plt.axis('equal')
-        plt.grid(True)
-        idx_fig += 1
+        plt.plot(pos[:,0], pos[:,1], 'bo-')
+        plt.axis('equal'); plt.show()
 
-        plt.show()
-
-    return thetas, positions
-
-def PDR(testfile):
-    test=pd.read_csv(testfile, delimiter=';')
-    Acc_Magn_temp = test[['ACCE_MOD']].values.tolist()
-    Gyr_Magn_temp = test[['GYRO_MOD']].values.tolist()
-    ACCE=test[['ACCE_X','ACCE_Y','ACCE_X']].values
-    GYRO=test[['GYRO_X','GYRO_Y','GYRO_X']].values
-    time_temp = test[['timestamp']].values.tolist()
-    POSI_X= test[['POSI_X']].values.tolist()
-    POSI_Y= test[['POSI_Y']].values.tolist()
-
-    Acc_Magn=[]
-    Gyr_Magn=[]
-    time=[]
-    X=[]
-    Y=[]
-
-    for i in range(len(Acc_Magn_temp)):
-        Acc_Magn.append(Acc_Magn_temp[i][0])
-        Gyr_Magn.append(Gyr_Magn_temp[i][0])
-        time.append(time_temp[i][0])
-        X.append(POSI_X[i][0])
-        Y.append(POSI_Y[i][0])
+    return thetas, pos
 
 
-    index_start=0
-    X = test[['POSI_X']].values
-    while X[index_start] == 0:
-        index_start += 1
-    print(index_start)
+def pdr_delta(accel, gyro, fs):
+    """
+    Compute X/Y delta between last two steps given IMU arrays.
+    """
+    mag = np.linalg.norm(accel, axis=1)
+    t = np.arange(len(mag)) / fs
+    n, events, stance = step_detection_accelerometer(mag, t, plot=False)
+    if len(events) < 2:
+        return 0.0, 0.0
+    thetas, pos = weiberg_stride_length_heading_position(accel, gyro, t, events, stance, ver=False, idx_fig=0)
+    if pos.shape[0] < 2:
+        return 0.0, 0.0
+    dx = pos[-1,0] - pos[-2,0]
+    dy = pos[-1,1] - pos[-2,1]
+    return float(dx), float(dy)
 
-    ACCE=ACCE[index_start:]
-    GYRO=GYRO[index_start:]
-    time=time[index_start:]
-    Acc_Magn=Acc_Magn[index_start:]
-    Gyr_Magn=Gyr_Magn[index_start:]
 
-    a,Steps,Stance=step_detection_accelerometer(Acc_Magn, time, plot=False, fig_idx=1)
-
-    thetas, positions = weiberg_stride_length_heading_position(ACCE,GYRO,time,Steps,Stance,1,1)
-
-    return thetas, positions 
+def reset_pdr_state():
+    pass

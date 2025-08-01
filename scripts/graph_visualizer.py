@@ -167,10 +167,10 @@ if __name__ == "__main__":
     sys.path.insert(0, str(ROOT))
 
     DATA_DIR = ROOT / 'data'
-    JSON_PATH = DATA_DIR / 'corridor_graph.json'
+    JSON_PATH = DATA_DIR / 'graph/corridor_graph.json'
     BACK_IMG  = ROOT / 'assets' / 'OBuilding_Floor2.png'
-    GRAPH_IMG = DATA_DIR / 'corridor_graph_visualization.png'
-    PATH_IMG  = DATA_DIR / 'path_2-10_to_2-04.png'
+    GRAPH_IMG = DATA_DIR / 'graph/corridor_graph_visualization.png'
+    PATH_IMG  = DATA_DIR / 'graph/path_2-10_to_2-04.png'
 
     if not JSON_PATH.exists():
         print("❌ Fichier introuvable:", JSON_PATH)

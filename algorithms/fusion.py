@@ -1,46 +1,43 @@
 # This code fuses PDR and fingerprint positions using a Kalman filter
 
-from scripts.geolocate import get_latest_positions
+import logging
 from algorithms.filters import KalmanFilter
 
-
+logger = logging.getLogger(__name__)
 _kf = None
 
-def fuse(pdr_pos, finger_pos, qr_reset=None):
-    """
-    Fusionne les positions avec un filtre de Kalman :
-    - pdr_pos : estimation par déplacement relatif (PDR)
-    - finger_pos : estimation absolue (Wi-Fi fingerprint)
-    - qr_reset : position absolue de référence (QR code)
-    """
+def get_floor(room: str) -> int:
+    try: return int(room.split('-')[0])
+    except: return 0
+
+def fuse(pdr_delta=None, wifi_pose=None, qr_anchor=None, room=None):
     global _kf
     if _kf is None:
         _kf = KalmanFilter()
+        logger.info("KalmanFilter initialized")
 
-    # Reset avec QR si présent
-    if qr_reset:
-        _kf.reset_state(qr_reset)
+    # QR hard reset
+    if qr_anchor:
+        xq,yq,fq = qr_anchor
+        _kf.reset_state((xq,yq,fq))
+        return _kf.get_state()
 
-    # Mise à jour prédictive avec PDR
-    if pdr_pos:
-        _kf.predict(pdr_delta=pdr_pos)
+    # PDR predict
+    if pdr_delta:
+        _kf.predict(pdr_delta)
 
-    # Mise à jour corrective avec fingerprint
-    if finger_pos:
-        _kf.update(measurement=finger_pos)
+    # Wi-Fi update
+    if wifi_pose:
+        xf,yf,ff = wifi_pose
+        if ff is None and room: ff=get_floor(room)
+        _kf.update((xf,yf,ff), source='wifi')
 
-    return _kf.get_state()
+    state=_kf.get_state()
+    logger.info(f"Fused state: {state}")
+    return state
 
 def reset_kalman():
+    """Reset the global Kalman filter state."""
     global _kf
     _kf = None
-
-if __name__ == '__main__':
-    # Récupère les positions depuis geolocate.py
-    pdr_pos, finger_pos, qr_reset = get_latest_positions()
-
-    if not pdr_pos or not finger_pos:
-        print("❌ Fusion impossible : position PDR ou fingerprint manquante.")
-    else:
-        fused = fuse(pdr_pos, finger_pos, qr_reset)
-        print(f"✅ Position fusionnée : {fused}")
+    logger.info("KalmanFilter global reset")

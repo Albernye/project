@@ -1,18 +1,14 @@
 """
 Fonctions partagées et configuration des chemins - Version adaptée aux formats réels
 """
-import pandas as pd
+import json
+import logging
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone 
+from typing import List, Any, Dict, Optional
+import pandas as pd
 import numpy as np
 import csv
-import os
-
-# Chemins projet
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw"
-STATS_DIR = PROJECT_ROOT / "data" / "stats"
-RECORDINGS_DIR = PROJECT_ROOT / "data" / "recordings"
 
 # Mapping capteurs et suffixe
 SENSOR_MAPPING = { 
@@ -28,237 +24,130 @@ SENSOR_MAPPING = {
 }
 UNCALIBRATED_SUFFIX = 'uncalibrated'
 
-def extract_room(folder_name: str) -> str:
-    """Extrait le numéro de salle du nom du dossier (ex: '2-1_quelquechose' -> '2-01')"""
-    base = folder_name.split('_', 1)[0]
-    parts = base.split('-')
-    return f"{parts[0]}-{parts[1].zfill(2)}" if len(parts) >= 2 else base
+# =============================================================================
+# 1) CONFIGURATION CENTRALISÉE
+# =============================================================================
+class Config:
+    BASE_DIR       = Path(__file__).resolve().parent.parent
+    DATA_DIR       = BASE_DIR / 'data'
+    RAW_DIR        = DATA_DIR / 'raw'
+    PROCESSED_DIR  = DATA_DIR / 'processed'
+    STATS_DIR      = DATA_DIR / 'stats'
+    RECORDINGS_DIR = DATA_DIR / 'recordings'
+    PDR_TRACE      = DATA_DIR / 'pdr_traces' / 'current.csv'
+    PDR_COLUMNS    = ('timestamp', 'POSI_X', 'POSI_Y', 'floor')
+    FP_CURRENT     = RECORDINGS_DIR / 'current_fingerprints.csv'
+    QR_EVENTS      = DATA_DIR / 'qr_events.json'
+    ROOM_POS_CSV   = DATA_DIR / 'room_positions.csv'
+    
+    MIN_ROWS       = 10
+    ROOM_PREFIX    = "2-"
+    GLOBAL_KNN     = "knn_train.csv"
+    
+    DEFAULT_FLOOR  = 2
+    DEFAULT_POSXY  = (2.194291,41.406351)
+    DEFAULT_RSSI   = -80
+    DEFAULT_AP_N   = 5
+    USE_SIMULATED_IMU = True
+    SIM_DURATION      = 10.0
+    SIM_FS            = 100.0
 
-def list_sensor_files(folder: Path):
-    """Liste les fichiers de capteurs, privilégiant les versions calibrées si disponibles"""
-    candidates = {f.stem.lower(): f for f in folder.glob("*.csv")}
-    files = []
-    for name, f in candidates.items():
-        key = name.replace(UNCALIBRATED_SUFFIX, '')
-        if key not in SENSOR_MAPPING: 
-            continue
-        if not name.endswith(UNCALIBRATED_SUFFIX):
-            unc = key + UNCALIBRATED_SUFFIX
-            if unc in candidates and f.stat().st_size < 50 and candidates[unc].stat().st_size >= 50:
-                continue
-        files.append(f)
-    return files
+cfg = Config()
 
-def read_sensor_csv(file: Path, room: str) -> pd.DataFrame:
-    """Lit un fichier CSV de capteur et standardise les colonnes selon le format réel"""
-    # Tentative de lecture avec différents encodages
-    for enc in ('utf-8', 'latin-1', 'cp1252'):
-        try: 
-            df = pd.read_csv(file, encoding=enc, engine='python', on_bad_lines='skip')
-            break
-        except Exception as e:
-            continue
-    else: 
-        print(f"❌ Impossible de lire {file.name}")
-        return None
-    
-    if df.empty: 
-        return None
-    
-    # Standardisation des noms de colonnes
-    df.columns = df.columns.str.strip()
-    
-    # Identification du capteur
-    name = file.stem.lower()
-    unc = name.endswith(UNCALIBRATED_SUFFIX)
-    key = name.replace(UNCALIBRATED_SUFFIX, '')
-    sensor = SENSOR_MAPPING.get(key)
-    
-    if not sensor: 
-        return None
-    
-    df['sensor_type'] = sensor + (UNCALIBRATED_SUFFIX if unc else '')
-    df['room'] = room
-    df['source_file'] = file.name
-    
-    # Conversion du timestamp - utiliser seconds_elapsed si disponible, sinon time
-    if 'seconds_elapsed' in df.columns:
-        df['timestamp'] = pd.to_numeric(df['seconds_elapsed'], errors='coerce')
-    elif 'time' in df.columns:
-        # Convertir le timestamp nanosecondes en secondes depuis le début
-        df['timestamp'] = pd.to_numeric(df['time'], errors='coerce')
-        if df['timestamp'].notna().any():
-            df['timestamp'] = (df['timestamp'] - df['timestamp'].iloc[0]) / 1e9
-    else:
-        print(f"⚠️ Pas de colonne temporelle trouvée dans {file.name}")
-        return None
-    
-    # Conversion des colonnes numériques selon le type de capteur
-    numeric_cols = ['x', 'y', 'z', 'pressure', 'relativeAltitude', 'alpha', 'beta', 'gamma']
-    for c in numeric_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors='coerce')
-    
-    return df
+logger = logging.getLogger(__name__)
 
-def calculate_stats(df: pd.DataFrame) -> pd.DataFrame:
-    """Calcule les statistiques agrégées par type de capteur"""
-    stats = []
-    for sensor in df['sensor_type'].unique():
-        sub = df[df['sensor_type'] == sensor]
-        numeric_cols = [c for c in sub.select_dtypes(include='number').columns 
-                       if c not in ['room', 'timestamp']]
-        if not numeric_cols:
-            continue
-        
-        desc = sub[numeric_cols].describe(percentiles=[.25, .5, .75])
-        base = {
-            'sensor_type': sensor,
-            'room': sub['room'].iat[0],
-            'data_points': len(sub)
-        }
-        
-        for col in numeric_cols:
-            base[f"{col}_mean"] = desc.loc['mean', col]
-            base[f"{col}_std"] = desc.loc['std', col]
-            base[f"{col}_min"] = desc.loc['min', col]
-            base[f"{col}_max"] = desc.loc['max', col]
-            # Utilisation des labels string pour les percentiles
-            for pct, label in [('25%', '25th'), ('50%', '50th'), ('75%', '75th')]:
-                if pct in desc.index:
-                    base[f"{col}_{label}"] = desc.loc[pct, col]
-                else:
-                    base[f"{col}_{label}"] = None
-        stats.append(base)
-    return pd.DataFrame(stats)
+# =============================================================================
+# 2) LOGGING
+# =============================================================================
+def get_logger(name: str=__name__, verbose: bool=False) -> logging.Logger:
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%H:%M:%S"
+    )
+    return logging.getLogger(name)
 
-def merge_sensor_data(dfs: list[pd.DataFrame]) -> pd.DataFrame:
-    """
-    Merge multiple sensor DataFrames into a single DataFrame with proper column naming.
-    Gère les formats réels des fichiers CSV.
-    """
-    cleaned = []
-    
-    for df in dfs:
-        if df.empty:
-            continue
-            
-        sensor = df['sensor_type'].iloc[0]
-        
-        # Vérifier la colonne timestamp
-        if 'timestamp' not in df.columns:
-            print(f"⚠️ merge_sensor_data: missing timestamp column for {sensor}")
-            continue
 
-        # Déterminer le préfixe selon le capteur
-        if sensor.startswith('accelerometer'):
-            prefix = 'ACCE'
-            mod_col = 'ACCE_MOD'
-            required_cols = ['x', 'y', 'z']
-        elif sensor.startswith('gyroscope'):
-            prefix = 'GYRO'
-            mod_col = 'GYRO_MOD'
-            required_cols = ['x', 'y', 'z']
-        elif sensor.startswith('magnetometer'):
-            prefix = 'MAGN'
-            mod_col = 'MAGN_MOD'
-            required_cols = ['x', 'y', 'z']
-        else:
-            # On ignore les autres capteurs pour le moment
-            print(f"⚠️ Capteur {sensor} non géré pour le merge")
-            continue
-
-        # Vérifier les colonnes x, y, z
-        if not all(c in df.columns for c in required_cols):
-            print(f"⚠️ merge_sensor_data: missing columns {required_cols} for {sensor}")
-            continue
-
-        # Créer un DataFrame temporaire avec les colonnes nécessaires
-        tmp = df[['timestamp'] + required_cols].copy()
-        tmp = tmp.dropna()  # Supprimer les lignes avec des NaN
-        
-        if tmp.empty:
-            print(f"⚠️ Données vides après nettoyage pour {sensor}")
-            continue
-        
-        # Utiliser timestamp comme index pour le merge
-        tmp = tmp.set_index('timestamp')
-        
-        # Renommage selon le format attendu
-        tmp = tmp.rename(columns={
-            'x': f'{prefix}_X',
-            'y': f'{prefix}_Y',
-            'z': f'{prefix}_Z'
-        })
-        
-        # Calcul de la magnitude (module)
-        tmp[mod_col] = np.sqrt(
-            tmp[f'{prefix}_X']**2 + 
-            tmp[f'{prefix}_Y']**2 + 
-            tmp[f'{prefix}_Z']**2
-        )
-        
-        print(f"✅ Préparé {sensor}: {len(tmp)} échantillons")
-        cleaned.append(tmp)
-
-    if not cleaned:
-        print("❌ Aucune donnée de capteur valide trouvée")
+# =============================================================================
+# 3) SAFE I/O (CSV & JSON)
+# =============================================================================
+def read_csv_safe(path: Path, **kwargs) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path, **kwargs)
+    except Exception as e:
+        logging.warning(f"read_csv_safe {path.name}: {e}")
         return pd.DataFrame()
 
-    print(f"🔗 Fusion de {len(cleaned)} capteurs...")
-    
-    # Fusion de tous les DataFrames sur le timestamp
-    merged = cleaned[0]
-    for i, other in enumerate(cleaned[1:], 1):
-        print(f"  Fusion avec capteur {i+1}")
-        merged = merged.join(other, how='outer')
+def write_csv_safe(df: pd.DataFrame, path: Path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
 
-    # Traitement des valeurs manquantes
-    print(f"📊 Données fusionnées: {len(merged)} échantillons")
-    merged = merged.sort_index()
-    
-    # Interpolation et remplissage des valeurs manquantes
-    merged = merged.interpolate(method='index').fillna(method='ffill').fillna(method='bfill')
-    
-    # Reset index et garder le timestamp
-    merged = merged.reset_index()
-    merged = merged.rename(columns={'timestamp': 'timestamp'})
-    
-    # Sélection et ordre des colonnes selon le format attendu
-    expected_cols = [
-        'timestamp',
-        'ACCE_X', 'ACCE_Y', 'ACCE_Z', 'ACCE_MOD',
-        'GYRO_X', 'GYRO_Y', 'GYRO_Z', 'GYRO_MOD',
-        'MAGN_X', 'MAGN_Y', 'MAGN_Z', 'MAGN_MOD'
-    ]
-    
-    # Ne garder que les colonnes qui existent
-    available_cols = [col for col in expected_cols if col in merged.columns]
-    final_df = merged[available_cols]
-    
-    print(f"✅ Données finales: {len(final_df)} échantillons, {len(available_cols)} colonnes")
-    return final_df
+def read_json_safe(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding='utf-8'))
+    except Exception:
+        return []
 
-def add_room_geo(df: pd.DataFrame, room: str) -> pd.DataFrame:
+def write_json_safe(obj: Any, path: Path | str):
     """
-    Ajoute les colonnes géographiques : long, lat, POSI_X, POSI_Y
+    Écrit un objet JSON de façon atomique en s'assurant que le dossier existe.
     """
-    if df.empty:
-        return df
-        
-    lon, lat = get_room_position(room)
-    
-    # Ajout des colonnes géographiques
-    df['long'] = lon
-    df['lat'] = lat
-    df['POSI_X'] = 0.0
-    df['POSI_Y'] = 0.0
-    
-    # Réorganisation des colonnes selon le format attendu
-    geo_cols = ['timestamp', 'long', 'lat', 'POSI_X', 'POSI_Y']
-    other_cols = [c for c in df.columns if c not in geo_cols]
-    
-    return df[geo_cols + other_cols]
+    p = Path(path) if not isinstance(path, Path) else path
+    p.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = p.with_suffix(p.suffix + ".tmp")
+    with open(temp_path, 'w', encoding='utf-8') as f:
+        json.dump(obj, f, indent=2, ensure_ascii=False)
+    temp_path.rename(p)
+
+# =============================================================================
+# 4) DEFAULTS GENERATORS
+# =============================================================================
+def default_pdr_row() -> Dict[str, Any]:
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat()+"Z",
+        "POSI_X":    cfg.DEFAULT_POSXY[0],
+        "POSI_Y":    cfg.DEFAULT_POSXY[1],
+        "floor":     cfg.DEFAULT_FLOOR
+    }
+
+def default_fingerprint_row() -> Dict[str, int]:
+    return {f"AP{i}": cfg.DEFAULT_RSSI for i in range(1, cfg.DEFAULT_AP_N+1)}
+
+def default_qr_event(room: str,
+                     lon: float | None = None,
+                     lat: float | None = None) -> dict:
+    """
+    Crée un événement QR pour la salle `room`.
+    Si (lon, lat) sont fournis, on les utilise ;
+    sinon on tombe sur DEFAULT_POSXY.
+    """
+    if lon is None or lat is None:
+        lon, lat = cfg.DEFAULT_POSXY
+
+    return {
+        "room": room,
+        "timestamp": datetime.now(timezone.utc).isoformat()+"Z",
+        "position": [lon, lat],
+    }
+
+
+# =============================================================================
+# 5) CONCATÉNATION GÉNÉRIQUE
+# =============================================================================
+def concat_fill(dfs: List[pd.DataFrame]) -> pd.DataFrame:
+    """Concatène des DataFrames en gérant les colonnes manquantes."""
+    if not dfs:
+        return pd.DataFrame()
+    all_cols = set().union(*(df.columns for df in dfs))
+    for df in dfs:
+        for c in all_cols - set(df.columns):
+            df[c] = pd.NA
+    return pd.concat(dfs, ignore_index=True)
+
+# =============================================================================
+# 6) POSITION DES SALLES
+# =============================================================================
 
 def load_room_positions(csv_file_path):
     """Load the room positions from a CSV file."""
@@ -284,23 +173,25 @@ def get_room_position(room_number: str) -> tuple[float, float]:
     """
     global _room_positions_cache
     if _room_positions_cache is None:
-        # Chemin vers data/room_positions.csv
         project_root = Path(__file__).resolve().parent.parent
         csv_path = project_root / "data" / "room_positions.csv"
         
         if not csv_path.exists():
-            print(f"⚠️ Fichier room_positions.csv non trouvé: {csv_path}")
-            print("   Utilisation des coordonnées par défaut")
+            logger.warning(f"[get_room_position] room_positions.csv non trouvé: {csv_path}")
+            logger.warning("               Utilisation des coordonnées par défaut (0.0, 0.0)")
             return (0.0, 0.0)
-            
+        
+        logger.debug(f"[get_room_position] Chargement de {csv_path}")
         _room_positions_cache = load_room_positions(csv_path)
+        logger.info(f"[get_room_position] {_room_positions_cache!r} positions chargées")
     
-    # Si la salle n'existe pas, on renvoie des coordonnées par défaut
     if room_number not in _room_positions_cache:
-        print(f"⚠️ Salle {room_number} non trouvée dans room_positions.csv")
+        logger.warning(f"[get_room_position] Salle '{room_number}' non trouvée dans cache")
         return (0.0, 0.0)
     
-    return _room_positions_cache[room_number]
+    coord = _room_positions_cache[room_number]
+    logger.debug(f"[get_room_position] '{room_number}' -> {coord}")
+    return coord
 
 def get_qr_reset_position(qr_code):
     """Return the position of a room based on a QR code."""
