@@ -15,8 +15,9 @@ from services.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
-from services.utils import get_room_position, cfg
+from services.utils import get_room_position
 from services.update_live import update_qr, update_localization_files
+import config as cfg
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG,

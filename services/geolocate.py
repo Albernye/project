@@ -5,16 +5,12 @@ import traceback
 import pandas as pd
 import numpy as np
 
+import config as cfg
 from algorithms.fingerprint import (get_last_position, ll_to_local, set_origin)
 from algorithms.PDR import pdr_delta
 from algorithms.filters import load_imu
 from services.utils import read_json_safe, get_room_position
 from archives.simulation.simu_pdr import simulate_imu_movement
-from config import (
-    PDR_TRACE, FP_CURRENT, QR_EVENTS_FILE, ROOM_POS_CSV,
-    DEFAULT_FLOOR, DEFAULT_POSXY, DEFAULT_AP_N, DEFAULT_RSSI,
-    GLOBAL_KNN, STATS_DIR, SIM_DURATION, SIM_FS,
-)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -22,10 +18,10 @@ logger = logging.getLogger(__name__)
 def setup_paths() -> dict:
     """Return the paths for the various data sources."""
     return {
-        'pdr_file': PDR_TRACE,
-        'knn_train': STATS_DIR / GLOBAL_KNN,
-        'fingerprints': FP_CURRENT,
-        'qr_events': QR_EVENTS_FILE,
+        'pdr_file': cfg.PDR_TRACE,
+        'knn_train': cfg.STATS_DIR / cfg.GLOBAL_KNN,
+        'fingerprints': cfg.FP_CURRENT,
+        'qr_events': cfg.QR_EVENTS_FILE,
     }
 
 
@@ -142,13 +138,13 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
     #     fs = 1.0 / np.mean(np.diff(times))
     # else:
     try:
-        res = load_imu(PDR_TRACE)
+        res = load_imu(cfg.PDR_TRACE)
         logger.debug(f"DEBUG load_imu returned -> {res!r}")
         accel, gyro, fs = res
         if accel.shape[0] < 2 or fs <= 0:
             raise ValueError("Insufficient IMU data for PDR")
         dx, dy = pdr_delta(accel, gyro, fs)
-        pdr_pos = (dx, dy, DEFAULT_FLOOR)
+        pdr_pos = (dx, dy, cfg.DEFAULT_FLOOR)
     except Exception as e:
         logger.warning(f"PDR skipped: {e}")
         pdr_pos = None
@@ -156,12 +152,12 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
     # WiFi
     # fingerprint may not yet be configured
     wifi_pos = None
-    knn_path = STATS_DIR / GLOBAL_KNN
-    if knn_path.exists() and Path(FP_CURRENT).exists():
+    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
         try:
             x, y, floor = get_last_position(
                 str(knn_path),
-                str(FP_CURRENT),
+                str(cfg.FP_CURRENT),
                 kP=3, kZ=3, R=10.0
             )
             wifi_pos = (x, y, floor)
@@ -169,11 +165,11 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
             logger.warning(f"Fingerprint failed: {e}")
 
     # QR
-    qr_geo = get_last_qr_position(QR_EVENTS_FILE)
+    qr_geo = get_last_qr_position(cfg.QR_EVENTS_FILE)
     qr_pos = None
     if qr_geo:
         x, y = ll_to_local(*qr_geo)
-        qr_pos = (x, y, DEFAULT_FLOOR)
+        qr_pos = (x, y, cfg.DEFAULT_FLOOR)
 
     return pdr_pos, wifi_pos, qr_pos
 

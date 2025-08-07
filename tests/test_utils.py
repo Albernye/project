@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from scripts.utils import get_room_position, load_room_positions, default_pdr_row
+from services.utils import load_room_positions, default_pdr_row
 
 @pytest.fixture
 def room_csv(tmp_path):

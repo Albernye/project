@@ -1,12 +1,10 @@
-import os
 import smtplib
 from email.message import EmailMessage
 import json
-from pathlib import Path
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional
-from config import config, EmailConfig
+from typing import List, Dict
+from config import config, email_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,26 +21,27 @@ def send_email(subject: str, body: str, to_email: str = None) -> bool:
         bool: True if sent successfully, False otherwise
     """
     try:
-        if not EmailConfig.is_configured():
-            missing = EmailConfig.get_missing_vars()
+        if not email_config.is_configured():
+            missing = email_config.get_missing_vars()
             logger.error(f"Email config incomplete. Missing: {missing}")
             raise RuntimeError(f"Email config incomplete. Missing: {', '.join(missing)}")
 
-        recipient = to_email or EmailConfig.recipient_email()
+        # Use the configured recipient email if not provided
+        recipient = to_email or email_config.recipient_email
         if not recipient:
             raise RuntimeError("No recipient email specified and RECIPIENT_EMAIL not configured")
 
         # Create the message
         msg = EmailMessage()
         msg['Subject'] = subject
-        msg['From'] = EmailConfig.email_user()
+        msg['From'] = email_config.email_user
         msg['To'] = recipient
         msg.set_content(body)
 
         # Send via SMTP
-        with smtplib.SMTP(EmailConfig.smtp_server(), EmailConfig.smtp_port()) as server:
+        with smtplib.SMTP(email_config.smtp_server, email_config.smtp_port) as server:
             server.starttls()
-            server.login(EmailConfig.email_user(), EmailConfig.email_password())
+            server.login(email_config.email_user, email_config.email_password)
             server.send_message(msg)
 
         logger.info(f"✅ Email sent successfully to: {recipient}")
@@ -283,7 +282,7 @@ Indoor Navigation System
 if __name__ == "__main__":
     print("🧪 Test email configuration...")
 
-    if EmailConfig.is_configured():
+    if email_config.is_configured():
         print("✅ Email configuration OK")
         
         # Test sending (optional)
@@ -299,7 +298,7 @@ if __name__ == "__main__":
         print(f"Result: {'✅ Success' if success else '❌ Failure'}")
 
     else:
-        missing = EmailConfig.get_missing_vars()
+        missing = email_config.get_missing_vars()
         print(f"❌ Incomplete email configuration. Missing variables: {missing}")
         print("""
 To configure email, set the following environment variables:

@@ -13,10 +13,8 @@ import argparse
 import pandas as pd
 import logging
 from pathlib import Path
-from typing import List, Optional
-from dataclasses import dataclass
-
-from scripts.sensors import (
+import config as cfg
+from services.sensors import (
     extract_room,
     list_sensor_files,
     read_sensor_csv,
@@ -24,8 +22,6 @@ from scripts.sensors import (
     merge_sensor_data,
     add_room_geo,
 )
-from scripts.utils import cfg
-
 
 def setup_logging(verbose: bool = False) -> logging.Logger:
     """Configure le logging avec format cohérent"""

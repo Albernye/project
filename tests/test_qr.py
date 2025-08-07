@@ -1,5 +1,5 @@
 import pytest
-from scripts.geolocate import get_last_qr_position
+from services.geolocate import get_last_qr_position
 
 def test_get_last_qr_position_valid():
     events = [

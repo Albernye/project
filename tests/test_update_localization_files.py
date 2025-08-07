@@ -1,9 +1,7 @@
 import pandas as pd
 import pytest
-from pathlib import Path
-from scripts.utils import cfg
-from scripts.update_live import update_localization_files
-
+from services.utils import config as cfg
+from services.update_live import update_localization_files
 class DummyLogger:
     def info(self, *args, **kwargs): pass
     def warning(self, *args, **kwargs): pass
@@ -20,9 +18,9 @@ def patch_dependencies(monkeypatch, tmp_path):
 
     # Simuler les appels
     calls = {"pdr": 0, "fp": 0, "qr": 0}
-    monkeypatch.setattr("scripts.update_live.update_pdr", lambda room, logger: calls.__setitem__("pdr", calls["pdr"]+1))
-    monkeypatch.setattr("scripts.update_live.update_fp",  lambda room, logger: calls.__setitem__("fp",  calls["fp"]+1))
-    monkeypatch.setattr("scripts.update_live.update_qr",  lambda room, logger: calls.__setitem__("qr", calls["qr"]+1))
+    monkeypatch.setattr("services.update_live.update_pdr", lambda room, logger: calls.__setitem__("pdr", calls["pdr"]+1))
+    monkeypatch.setattr("services.update_live.update_fp",  lambda room, logger: calls.__setitem__("fp",  calls["fp"]+1))
+    monkeypatch.setattr("services.update_live.update_qr",  lambda room, logger: calls.__setitem__("qr", calls["qr"]+1))
     return calls
 
 def test_update_localization(tmp_path, patch_dependencies):

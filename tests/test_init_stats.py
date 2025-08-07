@@ -6,8 +6,9 @@ from pathlib import Path
 # Ajoute le dossier racine du projet au PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import config as cfg
 from scripts.init_stats import process_room_data, init_stats
-from scripts.utils import cfg
+
 
 @pytest.fixture
 def dummy_raw_folder(tmp_path):
