@@ -1,7 +1,7 @@
 """
-Constructeur de graphe de couloirs à partir des positions des salles.
-Ce module lit les positions des salles depuis un CSV et construit un graphe
-représentant la topologie des couloirs d'un bâtiment.
+Builder for corridor graphs.
+This module reads room positions from a CSV and builds a graph
+representing the topology of a building's corridors.
 """
 
 import pandas as pd
@@ -12,29 +12,29 @@ import sys
 from collections import defaultdict
 
 def euclidean(x1, y1, x2, y2):
-    """Calcule la distance euclidienne entre deux points."""
+    """Calculate the Euclidean distance between two points."""
     return math.sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
 def group_rooms_by_corridor(rooms_data, y_tolerance=0.001):
     """
-    Groupe les salles par couloir basé sur leur position Y.
+    Group rooms by corridor based on their Y position.
     
     Args:
-        rooms_data: Liste de tuples (room_name, x, y)
-        y_tolerance: Tolérance pour considérer deux salles sur le même couloir
-    
+        rooms_data: List of tuples (room_name, x, y)
+        y_tolerance: Tolerance for considering two rooms on the same corridor
+
     Returns:
-        Dict avec les couloirs comme clés et les salles comme valeurs
+        Dict with corridors as keys and rooms as values
     """
     corridors = defaultdict(list)
-    
-    # Grouper par Y approximatif
+
+    # Group by approximate Y
     for room, x, y in rooms_data:
-        # Arrondir Y pour gérer les petites variations
+        # Round Y to handle small variations
         corridor_key = round(y, 3)
         corridors[corridor_key].append((room, x, y))
-    
-    # Trier chaque couloir par position X
+
+    # Sort each corridor by X position
     for corridor_key in corridors:
         corridors[corridor_key].sort(key=lambda item: item[1])
     
@@ -42,20 +42,20 @@ def group_rooms_by_corridor(rooms_data, y_tolerance=0.001):
 
 def create_corridor_nodes(corridors):
     """
-    Crée les points de couloir pour chaque groupe de salles.
+    Create corridor nodes from grouped rooms.
     
     Args:
-        corridors: Dict des couloirs groupés
-    
+        corridors: Dict of grouped corridors
+
     Returns:
-        Dict des points de couloir avec leurs coordonnées
+        Dict of corridor points with their coordinates
     """
     corridor_nodes = {}
     
     for corridor_id, (corridor_key, rooms) in enumerate(corridors.items()):
         corridor_name = f"couloir-{corridor_id + 1}"
-        
-        # Calculer les points de couloir
+
+        # Calculate corridor points
         corridor_points = []
         for i, (room, x, y) in enumerate(rooms):
             point_name = f"{corridor_name}-point-{i + 1}"
@@ -71,12 +71,12 @@ def create_corridor_nodes(corridors):
 
 def connect_nearby_rooms(graph, room_positions, max_distance=0.01):
     """
-    Connecte directement les salles qui sont très proches les unes des autres.
-    
+    Connect directly adjacent rooms that are very close to each other.
+
     Args:
-        graph: Graphe existant
-        room_positions: Positions des salles
-        max_distance: Distance maximale pour considérer deux salles comme adjacentes
+        graph: Existing graph
+        room_positions: Positions of the rooms
+        max_distance: Maximum distance to consider two rooms as adjacent
     """
     rooms = list(room_positions.keys())
     
@@ -86,42 +86,42 @@ def connect_nearby_rooms(graph, room_positions, max_distance=0.01):
             x2, y2 = room_positions[room2]
             
             dist = euclidean(x1, y1, x2, y2)
-            
-            # Si les salles sont très proches, les connecter directement
+
+            # If rooms are very close, connect them directly
             if dist <= max_distance:
                 graph[room1].append((room2, dist))
                 graph[room2].append((room1, dist))
-                print(f"Connexion directe ajoutée: {room1} ↔ {room2} ({dist:.4f}m)")
+                print(f"Direct connection added: {room1} ↔ {room2} ({dist:.4f}m)")
 
 def build_graph(room_csv_path):
     """
-    Construit le graphe des couloirs à partir d'un fichier CSV.
-    
+    Build the corridor graph from a CSV file.
+
     Args:
-        room_csv_path: Chemin vers le fichier CSV des positions des salles
-    
+        room_csv_path: Path to the CSV file containing room positions
+
     Returns:
         Tuple (graph, room_positions, corridor_structure)
     """
-    # Lire les données
+    # Read the data
     df = pd.read_csv(room_csv_path)
     rooms_data = [(row['room'], row['position_x'], row['position_y']) 
                   for _, row in df.iterrows()]
-    
-    # Grouper par couloir
+
+    # Group by corridor
     corridors = group_rooms_by_corridor(rooms_data)
     corridor_structure = create_corridor_nodes(corridors)
-    
-    # Construire le graphe
+
+    # Build the graph
     graph = defaultdict(list)
     room_positions = {}
-    
-    # Ajouter les connexions dans chaque couloir
+
+    # Add connections within each corridor
     for corridor_name, corridor_info in corridor_structure.items():
         points = corridor_info['points']
         rooms = corridor_info['rooms']
-        
-        # Connecter les points de couloir entre eux
+
+        # Connect corridor points to each other
         for i in range(len(points) - 1):
             point1_name, x1, y1 = points[i]
             point2_name, x2, y2 = points[i + 1]
@@ -129,33 +129,33 @@ def build_graph(room_csv_path):
             dist = euclidean(x1, y1, x2, y2)
             graph[point1_name].append((point2_name, dist))
             graph[point2_name].append((point1_name, dist))
-        
-        # Connecter chaque salle à son point de couloir correspondant
+
+        # Connect each room to its corresponding corridor point
         for i, (room, room_x, room_y) in enumerate(rooms):
             point_name, corridor_x, corridor_y = points[i]
-            
-            # Distance de la salle au point de couloir
+
+            # Distance from the room to the corridor point
             dist = euclidean(room_x, room_y, corridor_x, corridor_y)
             graph[room].append((point_name, dist))
             graph[point_name].append((room, dist))
-            
-            # Stocker la position de la salle
+
+            # Store the position of the room
             room_positions[room] = (room_x, room_y)
-    
-    # Connecter les salles très proches directement (comme 2-19 et 2-20)
+
+    # Connect very close rooms directly (like 2-19 and 2-20)
     connect_nearby_rooms(graph, room_positions, max_distance=0.01)
     
     return dict(graph), room_positions, corridor_structure
 
 def save_graph_to_json(graph, room_positions, corridor_structure, output_path):
     """
-    Sauvegarde le graphe dans un fichier JSON pour réutilisation.
-    
+    Save the graph to a JSON file for reuse.
+
     Args:
-        graph: Le graphe construit
-        room_positions: Positions des salles
-        corridor_structure: Structure des couloirs
-        output_path: Chemin de sauvegarde
+        graph: The constructed graph
+        room_positions: Positions of the rooms
+        corridor_structure: Structure of the corridors
+        output_path: Path to the output file
     """
     data = {
         'graph': graph,
@@ -168,11 +168,11 @@ def save_graph_to_json(graph, room_positions, corridor_structure, output_path):
 
 def load_graph_from_json(json_path):
     """
-    Charge un graphe depuis un fichier JSON.
-    
+    Load a graph from a JSON file.
+
     Args:
-        json_path: Chemin vers le fichier JSON
-    
+        json_path: Path to the JSON file
+
     Returns:
         Tuple (graph, room_positions, corridor_structure)
     """
@@ -197,34 +197,34 @@ if __name__ == "__main__":
             break
     
     if csv_path is None:
-        print("❌ Fichier room_positions.csv non trouvé dans les emplacements suivants:")
+        print("❌ File room_positions.csv not found in the following locations:")
         for path in possible_csv_paths:
             print(f"  - {os.path.abspath(path)}")
-        print("\nCréez d'abord le fichier CSV avec les positions des salles.")
+        print("\nPlease create the CSV file with the room positions first.")
         sys.exit(1)
-    
-    print(f"📁 Utilisation du fichier CSV: {os.path.abspath(csv_path)}")
-    
-    # Construire le graphe
+
+    print(f"📁 Using CSV file: {os.path.abspath(csv_path)}")
+
+    # Build the graph
     graph, room_positions, corridor_structure = build_graph(csv_path)
-    
-    # Afficher les informations
-    print("Graphe construit avec succès!")
-    print(f"Nombre de nœuds: {len(graph)}")
-    print(f"Nombre de salles: {len(room_positions)}")
-    print(f"Nombre de couloirs: {len(corridor_structure)}")
-    
-    # Afficher la structure des couloirs
+
+    # Display the information
+    print("Graph built successfully!")
+    print(f"Number of nodes: {len(graph)}")
+    print(f"Number of rooms: {len(room_positions)}")
+    print(f"Number of corridors: {len(corridor_structure)}")
+
+    # Display the corridor structure
     for corridor_name, info in corridor_structure.items():
         print(f"\n{corridor_name}:")
-        print(f"  Niveau Y: {info['y_level']}")
-        print(f"  Nombre de salles: {len(info['rooms'])}")
-        print(f"  Salles: {[room[0] for room in info['rooms']]}")
-    
-    # Déterminer le chemin de sauvegarde
+        print(f"  Y Level: {info['y_level']}")
+        print(f"  Number of Rooms: {len(info['rooms'])}")
+        print(f"  Rooms: {[room[0] for room in info['rooms']]}")
+
+    # Determine the output path
     output_dir = os.path.dirname(csv_path)
     output_path = os.path.join(output_dir, 'corridor_graph.json')
-    
-    # Sauvegarder le graphe
+
+    # Save the graph
     save_graph_to_json(graph, room_positions, corridor_structure, output_path)
-    print(f"\n✅ Graphe sauvegardé dans: {os.path.abspath(output_path)}")
+    print(f"\n✅ Graph saved to: {os.path.abspath(output_path)}")

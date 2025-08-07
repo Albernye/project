@@ -14,5 +14,5 @@ def inspect_qr_codes(folder):
             else:
                 print(f"⚠️ Aucun QR code lisible dans {filename}")
 
-# Exemple d’utilisation
+# Example usage
 inspect_qr_codes('qrcodes')

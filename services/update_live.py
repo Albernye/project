@@ -24,25 +24,25 @@ def update_pdr(room, logger):
         write_csv_safe(pd.DataFrame([default_pdr_row()]), dst)
         logger.warning("PDR default created")
 
-def update_fp(room, logger):
-    # if we don’t yet have a global knn_train.csv, skip fingerprint
-    knn_path = config.STATS_DIR / config.GLOBAL_KNN
-    if not knn_path.exists():
-        logger.warning(f"No knn_train.csv found at {knn_path}, skipping FP update")
-        # write default RSSI row so geolocate sees “no FP data”
-        write_csv_safe(pd.DataFrame([default_fingerprint_row()]), config.FP_CURRENT)
-        return
+# def update_fp(room, logger):
+#     # if we don’t yet have a global knn_train.csv, skip fingerprint
+#     knn_path = config.STATS_DIR / config.GLOBAL_KNN
+#     if not knn_path.exists():
+#         logger.warning(f"No knn_train.csv found at {knn_path}, skipping FP update")
+#         # write default RSSI row so geolocate sees “no FP data”
+#         write_csv_safe(pd.DataFrame([default_fingerprint_row()]), config.FP_CURRENT)
+#         return
 
-    src = config.RECORDINGS_DIR / f"door_{room.replace('-','_')}" / 'latest.csv'
-    dst = config.FP_CURRENT
-    df  = read_csv_safe(src)
-    if not df.empty:
-        ap = [c for c in df.columns if c.lower().startswith('ap')]
-        write_csv_safe(pd.DataFrame([df[ap].mean()]), dst)
-        logger.info(f"FP updated ← {src.name}")
-    else:
-        write_csv_safe(pd.DataFrame([default_fingerprint_row()]), dst)
-        logger.warning("Fingerprint default created")
+#     src = config.RECORDINGS_DIR / f"door_{room.replace('-','_')}" / 'latest.csv'
+#     dst = config.FP_CURRENT
+#     df  = read_csv_safe(src)
+#     if not df.empty:
+#         ap = [c for c in df.columns if c.lower().startswith('ap')]
+#         write_csv_safe(pd.DataFrame([df[ap].mean()]), dst)
+#         logger.info(f"FP updated ← {src.name}")
+#     else:
+#         write_csv_safe(pd.DataFrame([default_fingerprint_row()]), dst)
+#         logger.warning("Fingerprint default created")
 
 def update_qr(room, logger):
     """Update the QR events file for a specific room."""
@@ -96,7 +96,7 @@ def update_localization_files(df: pd.DataFrame, folder_name: str, room: str):
     # Update files
     update_pdr(room, logger)
 
-    update_fp(room, logger)
+    # update_fp(room, logger)
 
     update_qr(room, logger)
 
@@ -107,7 +107,7 @@ def main(room, verbose=False):
     logger = get_logger(__name__, verbose)
     logger.info(f"Updating live for room {room}")
     update_pdr(room, logger)
-    update_fp(room, logger)
+    # update_fp(room, logger)
     logger.info("Uncomment below to log QR resets")
     update_qr(room, logger)
 

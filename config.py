@@ -46,8 +46,8 @@ SENSOR_MAPPING: dict[str, str] = {
     'microphone': 'microphone'
 }
 UNCALIBRATED_SUFFIX: str = 'uncalibrated'
-MIN_ROWS: int = 15  
-
+MIN_ROWS: int = 15
+ROOM_PREFIX: str = '2-'
 # -----------------------------------------------------------------------------
 # Simulation parameters
 # -----------------------------------------------------------------------------

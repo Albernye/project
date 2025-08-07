@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 
 
 def extract_room(folder_name: str) -> str:
-    """Extrait le numéro de salle du nom du dossier (ex: '2-1_quelquechose' -> '2-01')"""
+    """Extract the room number from the folder name (ex: '2-1_something' -> '2-01')"""
     base = folder_name.split('_', 1)[0]
     parts = base.split('-')
     room = f"{parts[0]}-{parts[1].zfill(2)}" if len(parts) >= 2 else base
@@ -23,7 +23,7 @@ def extract_room(folder_name: str) -> str:
 
 
 def list_sensor_files(folder: Path) -> list[Path]:
-    """Liste les fichiers de capteurs valides dans un dossier."""
+    """List valid sensor files in a folder."""
     files: list[Path] = []
     for f in folder.glob("*.csv"):
         key = f.stem.lower().replace('_0', '').replace(config.UNCALIBRATED_SUFFIX, '')
@@ -36,7 +36,7 @@ def list_sensor_files(folder: Path) -> list[Path]:
 
 
 def read_sensor_csv(file: Path, room: str) -> pd.DataFrame | None:
-    """Lit et standardise un CSV de capteur pour la salle donnée."""
+    """Read and standardize a sensor CSV for the given room."""
     df: pd.DataFrame | None = None
     for enc in ('utf-8', 'latin-1', 'cp1252'):
         try:
@@ -83,7 +83,7 @@ def read_sensor_csv(file: Path, room: str) -> pd.DataFrame | None:
 
 
 def calculate_stats(df: pd.DataFrame) -> pd.DataFrame:
-    """Calcule les stats agrégées (mean, std, percentiles) par capteur."""
+    """Calculate aggregated stats (mean, std, percentiles) by sensor."""
     records: list[dict] = []
     for sensor in df['sensor_type'].unique():
         sub = df[df['sensor_type'] == sensor]
@@ -104,7 +104,7 @@ def calculate_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def merge_sensor_data(dfs: list[pd.DataFrame]) -> pd.DataFrame:
-    """Fusionne et synchronise les données temps (timestamp) de plusieurs capteurs."""
+    """Merge and synchronize timestamped data from multiple sensors."""
     prepared: list[pd.DataFrame] = []
     for df in dfs:
         if df is None or df.empty:
@@ -147,7 +147,7 @@ def merge_sensor_data(dfs: list[pd.DataFrame]) -> pd.DataFrame:
 
 
 def add_room_geo(df: pd.DataFrame, room: str) -> pd.DataFrame:
-    """Ajoute long, lat, POSI_X, POSI_Y en début de DataFrame."""
+    """Add long, lat, POSI_X, POSI_Y at the beginning of the DataFrame."""
     if df is None or df.empty:
         return df
     lon, lat = get_room_position(room)

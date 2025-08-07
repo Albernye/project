@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 
 import config as cfg
-from algorithms.fingerprint import (get_last_position, ll_to_local, set_origin)
+from algorithms.fingerprint import (ll_to_local, set_origin)
 from algorithms.PDR import pdr_delta
 from algorithms.filters import load_imu
 from services.utils import read_json_safe, get_room_position
@@ -19,7 +19,7 @@ def setup_paths() -> dict:
     """Return the paths for the various data sources."""
     return {
         'pdr_file': cfg.PDR_TRACE,
-        'knn_train': cfg.STATS_DIR / cfg.GLOBAL_KNN,
+        #'knn_train': cfg.STATS_DIR / cfg.GLOBAL_KNN,
         'fingerprints': cfg.FP_CURRENT,
         'qr_events': cfg.QR_EVENTS_FILE,
     }
@@ -30,8 +30,8 @@ def initialize_coordinate_system(lon: float = None, lat: float = None) -> None:
     Initialize the local coordinate system.
     Call once at the start of the application.
     """
-    origin_lon = lon if lon is not None else DEFAULT_POSXY[0]
-    origin_lat = lat if lat is not None else DEFAULT_POSXY[1]
+    origin_lon = lon if lon is not None else cfg.DEFAULT_POSXY[0]
+    origin_lat = lat if lat is not None else cfg.DEFAULT_POSXY[1]
     set_origin(origin_lon, origin_lat)
     logger.info(f"Origin set at ({origin_lon}, {origin_lat})")
 
@@ -128,7 +128,7 @@ def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[T
 
 def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
     """
-    Get the latest positions: PDR, WiFi, QR.
+    Get the latest positions: PDR, (WiFi), QR.
     Return three tuples or None.
     """
     # PDR
@@ -152,17 +152,17 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
     # WiFi
     # fingerprint may not yet be configured
     wifi_pos = None
-    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
-    if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
-        try:
-            x, y, floor = get_last_position(
-                str(knn_path),
-                str(cfg.FP_CURRENT),
-                kP=3, kZ=3, R=10.0
-            )
-            wifi_pos = (x, y, floor)
-        except Exception as e:
-            logger.warning(f"Fingerprint failed: {e}")
+    # knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    # if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
+    #     try:
+    #         x, y, floor = get_last_position(
+    #             str(knn_path),
+    #             str(cfg.FP_CURRENT),
+    #             kP=3, kZ=3, R=10.0
+    #         )
+    #         wifi_pos = (x, y, floor)
+    #     except Exception as e:
+    #         logger.warning(f"Fingerprint failed: {e}")
 
     # QR
     qr_geo = get_last_qr_position(cfg.QR_EVENTS_FILE)

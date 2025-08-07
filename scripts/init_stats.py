@@ -1,10 +1,10 @@
 """
-Initialisation (preprocessing) des données brutes a priori :
-- Parcourt data/raw/2-XX_*/
-- Calcule et exporte:
-   • processed CSV pour PDR + fingerprint: data/processed/room_<room>_processed.csv
-   • stats agrégées par capteur:     data/stats/room_<room>.csv
-- Concatène toutes les stats en knn_train.csv pour le fingerprinting global.
+Initialization script for sensor statistics and processed data.:
+- Path data/raw/2-XX_*/
+- Calculates statistics for each room:
+   • processed CSV for PDR + fingerprint: data/processed/room_<room>_processed.csv
+   • aggregated stats by sensor:     data/stats/room_<room>.csv
+- Concatenates all stats into knn_train.csv for global fingerprinting.
 
 Usage:
     python init_stats.py [--verbose]
@@ -53,20 +53,20 @@ def validate_sensor_data(df: pd.DataFrame, filename: str) -> bool:
 
 def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
     """
-    Traite les données d'une salle spécifique
+    Manage the processing of a room's raw data:
     
     Args:
-        folder: Dossier contenant les données brutes
-        room: Identifiant de la salle
-        processed_dir: Dossier de sortie pour les données traitées
-        
+        folder: Folder containing raw data for the room
+        room: Room identifier
+        processed_dir: Output folder for processed data
+
     Returns:
-        True si le traitement a réussi, False sinon
+        True if processing succeeded, False otherwise
     """
     logger = logging.getLogger(__name__)
     logger.info(f"Processing raw/{folder.name} → room {room}")
-    
-    # Charger les fichiers capteurs
+
+    # Load sensor files
     dfs = []
     sensor_files = list_sensor_files(folder)
     
@@ -92,8 +92,8 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
     if not dfs:
         logger.error(f"No valid sensor data for room {room}")
         return False
-    
-    # Générer le CSV processed
+
+    # Generate the processed CSV
     try:
         logger.info("Merging sensor data...")
         merged = merge_sensor_data(dfs)
@@ -104,13 +104,13 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
         
         logger.info("Adding geo columns...")
         processed = add_room_geo(merged, room)
-        
-        # Sauvegarde du fichier processed
+
+        # Save the processed file
         out_proc = processed_dir / f"room_{room}_processed.csv"
         processed.to_csv(out_proc, index=False)
         logger.info(f"Export: {out_proc}")
-        
-        # Calcul des stats agrégées
+
+        # Calculate aggregated stats
         logger.info("Calculating stats...")
         all_df = pd.concat(dfs, ignore_index=True)
         stats = calculate_stats(all_df)
@@ -129,25 +129,15 @@ def process_room_data(folder: Path, room: str, processed_dir: Path) -> bool:
 
 def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bool:
     """
-    Traite un dossier raw/Route-N comme une 'route' :
-      - lit tous les capteurs CSV
-      - merge_sensor_data pour obtenir ACCE_*, GYRO_*, MAGN_* sur un même index timestamp
-      - sauvegarde en processed/route_<N>_processed.csv
+    Manage the processing of a route's raw data:
+      - Load all sensor CSVs
+      - merge_sensor_data to obtain ACCE_*, GYRO_*, MAGN_* on the same timestamp index
+      - Save to processed/route_<N>_processed.csv
     """
     logger = logging.getLogger(__name__)
     logger.info(f"Processing raw/{folder.name} → route {route_name}")
 
-    # 1. Lire tous les fichiers capteurs
-    dfs = []
-    for f in list_sensor_files(folder):
-        df = read_sensor_csv(f, route_name)
-        if df is None or df.empty:
-            logger.warning(f"Skip invalid file {f.name}")
-
-    logger = logging.getLogger(__name__)
-    logger.info(f"Processing raw/{folder.name} → route {route_name}")
-
-    # 1. Lire tous les fichiers capteurs
+    # 1. Load all sensor files
     dfs = []
     for f in list_sensor_files(folder):
         df = read_sensor_csv(f, route_name)
@@ -161,7 +151,7 @@ def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bo
         logger.error(f"No valid sensor data in {folder}")
         return False
 
-    # 2. Fusionner sur le timestamp
+    # 2. Merge on timestamp
     try:
         logger.info("Merging sensor data for route...")
         merged = merge_sensor_data(dfs)
@@ -169,7 +159,7 @@ def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bo
             logger.error("merge_sensor_data returned empty")
             return False
 
-        # 3. Sauvegarde sans géo
+        # 3. Save without geo
         out_file = processed_dir / f"route_{route_name}_processed.csv"
         merged.to_csv(out_file, index=False)
         logger.info(f"Exported {out_file}")
@@ -180,87 +170,87 @@ def process_route_data(folder: Path, route_name: str, processed_dir: Path) -> bo
         logger.exception(f"Error processing route {route_name}: {e}")
         return False
 
-def build_global_training_set() -> bool:
-    """
-    Construit le fichier d'entraînement global pour le kNN
+# def build_global_training_set() -> bool:
+#     """
+#     Build the global kNN training set from per-room stats.
     
-    Returns:
-        True si la construction a réussi, False sinon
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Building global kNN training set...")
+#     Returns:
+#         True if construction succeeded, False otherwise
+#     """
+#     logger = logging.getLogger(__name__)
+#     logger.info("Building global kNN training set...")
 
-    stat_files = sorted(cfg.STATS_DIR.glob("room_*.csv"))
+#     stat_files = sorted(cfg.STATS_DIR.glob("room_*.csv"))
 
-    if not stat_files:
-        logger.error("No per-room stats found, knn_train.csv skipped")
-        return False
+#     if not stat_files:
+#         logger.error("No per-room stats found, knn_train.csv skipped")
+#         return False
     
-    try:
-        # Concaténation avec gestion des colonnes manquantes
-        dfs = []
-        all_columns = set()
+#     try:
+#         # Concatenation with missing column handling
+#         dfs = []
+#         all_columns = set()
+#
+#         # First pass: identify all columns
+#         for stat_file in stat_files:
+#             try:
+#                 df_room = pd.read_csv(stat_file)
+#                 if not df_room.empty:
+#                     all_columns.update(df_room.columns)
+#                     dfs.append((stat_file, df_room))
+#             except Exception as e:
+#                 logger.error(f"Error reading {stat_file}: {e}")
+#                 continue
         
-        # Premier passage : identifier toutes les colonnes
-        for stat_file in stat_files:
-            try:
-                df_room = pd.read_csv(stat_file)
-                if not df_room.empty:
-                    all_columns.update(df_room.columns)
-                    dfs.append((stat_file, df_room))
-            except Exception as e:
-                logger.error(f"Error reading {stat_file}: {e}")
-                continue
-        
-        if not dfs:
-            logger.error("No valid stat files found")
-            return False
-        
-        # Deuxième passage : harmoniser les colonnes
-        harmonized_dfs = []
-        for stat_file, df_room in dfs:
-            # Ajouter les colonnes manquantes
-            for col in all_columns - set(df_room.columns):
-                df_room[col] = None
-            
-            # Réorganiser les colonnes dans un ordre cohérent
-            df_room = df_room.reindex(columns=sorted(all_columns))
-            harmonized_dfs.append(df_room)
-        
-        # Concaténation finale
-        harmonized_dfs = [df.dropna(axis=1, how='all')  # supprime les colonnes complètement vides
-            for df in harmonized_dfs
-            if not df.empty and df.dropna(how='all', axis=1).shape[1] > 0
-        ]
+#         if not dfs:
+#             logger.error("No valid stat files found")
+#             return False
 
-        df_knn = pd.concat(harmonized_dfs, ignore_index=True)
+#         # Second pass: harmonize columns
+#         harmonized_dfs = []
+#         for stat_file, df_room in dfs:
+#             # Add missing columns
+#             for col in all_columns - set(df_room.columns):
+#                 df_room[col] = None
+#
+#             # Rearrange columns in a consistent order
+#             df_room = df_room.reindex(columns=sorted(all_columns))
+#             harmonized_dfs.append(df_room)
+#
+#         # Final concatenation
+#         harmonized_dfs = [df.dropna(axis=1, how='all')  # remove completely empty columns
+#             for df in harmonized_dfs
+#             if not df.empty and df.dropna(how='all', axis=1).shape[1] > 0
+#         ]
+
+#         df_knn = pd.concat(harmonized_dfs, ignore_index=True)
         
-        # Sauvegarde
-        out_knn = cfg.STATS_DIR / cfg.GLOBAL_KNN
-        df_knn.to_csv(out_knn, index=False)
+#         # Sauvegarde
+#         out_knn = cfg.RECORDINGS_DIR / cfg.GLOBAL_KNN
+#         df_knn.to_csv(out_knn, index=False)
         
-        logger.info(f"Global training file: {out_knn} ({len(df_knn)} rows, {len(all_columns)} columns)")
-        return True
+#         logger.info(f"Global training file: {out_knn} ({len(df_knn)} rows, {len(all_columns)} columns)")
+#         return True
         
-    except Exception as e:
-        logger.error(f"Error building global training set: {e}")
-        return False
+#     except Exception as e:
+#         logger.error(f"Error building global training set: {e}")
+#         return False
 
 def init_stats(verbose: bool = False) -> None:
     """
-    Fonction principale d'initialisation des statistiques
+    Main function to initialize sensor statistics and processed data.
     
     Args:
-        verbose: Active le logging détaillé
+        verbose: Enable detailed logging
     """
     logger = setup_logging(verbose)
-    
-    # Préparation des dossiers
+
+    # Prepare directories
     processed_dir = cfg.PROCESSED_DIR
     processed_dir.mkdir(exist_ok=True, parents=True)
     cfg.STATS_DIR.mkdir(exist_ok=True, parents=True)
 
-    # Traitement des salles
+    # Process rooms
     processed_rooms = []
     processed_routes = []
     total_folders = 0
@@ -288,16 +278,16 @@ def init_stats(verbose: bool = False) -> None:
             except Exception as e:
                 logger.error(f"Error processing route folder {folder.name}: {e}")
                 continue
-    
-    # Construction du fichier d'entraînement global
-    global_success = build_global_training_set()
-    
-    # Rapport final
+
+    # Build global training set
+    # global_success = build_global_training_set()
+
+    # Final report
     logger.info(f"Processing complete:")
     logger.info(f"  - Folders found: {total_folders}")
     logger.info(f"  - Rooms processed: {len(processed_rooms)}")
     logger.info(f"  - Routes processed: {len(processed_routes)}")
-    logger.info(f"  - Global training set: {'✅' if global_success else '❌'}")
+    # logger.info(f"  - Global training set: {'✅' if global_success else '❌'}")
     
     if processed_rooms:
         logger.info(f"  - Processed rooms: {', '.join(processed_rooms)}")

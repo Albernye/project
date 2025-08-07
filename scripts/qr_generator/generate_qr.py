@@ -5,8 +5,8 @@ from config import config
 
 def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
     """
-    Génère les QR codes pour les salles 201-225 avec leur numéro en dessous
-    et les place dans project/qrcodes.
+    Generate QR codes for rooms 201-225 with their numbers below
+    and place them in project/qrcodes.
     """
     if base_url is None:
         base_url = config.qr_base_url
@@ -16,7 +16,7 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # Optionnel : change la police si tu veux (utilise une police installée ou par défaut)
+    # Option : change the font if you want (use an installed font or default)
     try:
         font = ImageFont.truetype("arial.ttf", 20)
     except:
@@ -26,16 +26,16 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
         room_url = f"{base_url}{room_number}"
         qr = qrcode.make(room_url)
 
-        # Convertir en image RGB pour modification
+        # Convert to RGB image for editing
         qr = qr.convert("RGB")
 
-        # Créer une nouvelle image plus haute pour le texte
+        # Create a new image taller for the text
         width, height = qr.size
-        new_height = height + 40  # espace pour le texte
+        new_height = height + 40  # space for the text
         new_img = Image.new("RGB", (width, new_height), "white")
         new_img.paste(qr, (0, 0))
 
-        # Ajouter le texte (numéro de salle centré)
+        # Add the text (room number centered)
         draw = ImageDraw.Draw(new_img)
         text = f"Salle {room_number}"
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -43,12 +43,12 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
         draw.text(((width - text_width) / 2, height + 10), text, fill="black", font=font)
 
 
-        # Sauvegarder l’image finale
+        # Save the final image
         filename = os.path.join(output_dir, f"room_{room_number}.png")
         new_img.save(filename)
-        print(f"✅ QR code sauvegardé : {filename}")
+        print(f"✅ QR code saved to: {filename}")
 
-    print(f"🎉 {25} QR codes générés dans {output_dir}")
+    print(f"🎉 {25} QR codes generated in {output_dir}")
     return output_dir
 
 if __name__ == "__main__":

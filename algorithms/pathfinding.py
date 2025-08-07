@@ -1,7 +1,7 @@
 """
-Algorithmes de recherche de chemin pour les graphes de couloirs.
-Ce module contient l'implémentation de Dijkstra et d'autres algorithmes
-de recherche de chemin optimaux.
+Algorithms for pathfinding in corridor graphs.
+This module contains the implementation of Dijkstra and other optimal
+pathfinding algorithms.
 """
 
 import heapq
@@ -9,38 +9,38 @@ import json
 from typing import Dict, List, Tuple, Optional
 
 class PathFinder:
-    """Classe pour les algorithmes de recherche de chemin."""
+    """Class for pathfinding algorithms."""
     
     def __init__(self, graph: Dict[str, List[Tuple[str, float]]]):
         """
-        Initialise le PathFinder avec un graphe.
+        Initialize the PathFinder with a graph.
         
         Args:
-            graph: Dictionnaire représentant le graphe
-                  {node: [(neighbor, weight), ...]}
+            graph: Dictionary representing the graph
+                   {node: [(neighbor, weight), ...]}
         """
         self.graph = graph
     
     def dijkstra(self, start: str, end: str) -> Tuple[float, List[str]]:
         """
-        Implémentation de l'algorithme de Dijkstra.
-        
+        Implementation of Dijkstra's algorithm.
+
         Args:
-            start: Nœud de départ
-            end: Nœud d'arrivée
+            start: Starting node
+            end: Target node
         
         Returns:
-            Tuple (distance, chemin)
-        
+            Tuple (distance, path)
+
         Raises:
-            KeyError: Si un nœud n'existe pas dans le graphe
+            KeyError: If a node does not exist in the graph
         """
         if start not in self.graph:
-            raise KeyError(f"Nœud de départ '{start}' introuvable dans le graphe")
+            raise KeyError(f"Starting node '{start}' not found in the graph")
         if end not in self.graph:
-            raise KeyError(f"Nœud d'arrivée '{end}' introuvable dans le graphe")
-        
-        # Initialisation
+            raise KeyError(f"Target node '{end}' not found in the graph")
+
+        # Initialization
         distances = {node: float('inf') for node in self.graph}
         distances[start] = 0
         priority_queue = [(0, start)]
@@ -54,12 +54,12 @@ class PathFinder:
                 continue
             
             visited.add(current_node)
-            
-            # Si on atteint la destination
+
+            # If we reached the target
             if current_node == end:
                 break
-            
-            # Examiner les voisins
+
+            # Examine the neighbors
             for neighbor, weight in self.graph[current_node]:
                 if neighbor in visited:
                     continue
@@ -70,7 +70,7 @@ class PathFinder:
                     predecessors[neighbor] = current_node
                     heapq.heappush(priority_queue, (distance, neighbor))
         
-        # Reconstruction du chemin
+        # Rebuild the path
         if end not in predecessors and start != end:
             return float('inf'), []
         
@@ -84,14 +84,14 @@ class PathFinder:
     
     def find_shortest_path(self, start: str, end: str) -> Optional[Dict]:
         """
-        Trouve le chemin le plus court entre deux nœuds.
-        
+        Find the shortest path between two nodes.
+
         Args:
-            start: Nœud de départ
-            end: Nœud d'arrivée
-        
+            start: Starting node
+            end: Target node
+
         Returns:
-            Dict contenant la distance, le chemin et les métadonnées
+            Dict containing the distance, path, and metadata
         """
         try:
             distance, path = self.dijkstra(start, end)
@@ -114,17 +114,17 @@ class PathFinder:
     
     def find_all_paths_from_node(self, start: str, max_distance: float = float('inf')) -> Dict:
         """
-        Trouve tous les chemins depuis un nœud donné.
-        
+        Find all paths from a given node.
+
         Args:
-            start: Nœud de départ
-            max_distance: Distance maximale à considérer
-        
+            start: Starting node
+            max_distance: Maximum distance to consider
+
         Returns:
             Dict {destination: {'distance': float, 'path': List[str]}}
         """
         if start not in self.graph:
-            raise KeyError(f"Nœud de départ '{start}' introuvable dans le graphe")
+            raise KeyError(f"Starting node '{start}' not found in the graph")
         
         distances = {node: float('inf') for node in self.graph}
         distances[start] = 0
@@ -147,8 +147,8 @@ class PathFinder:
                     distances[neighbor] = distance
                     predecessors[neighbor] = current_node
                     heapq.heappush(priority_queue, (distance, neighbor))
-        
-        # Reconstruire tous les chemins
+
+        # Rebuild all paths
         for end_node in self.graph:
             if end_node != start and distances[end_node] != float('inf'):
                 path = []
@@ -166,13 +166,13 @@ class PathFinder:
 
 def load_pathfinder_from_json(json_path: str) -> PathFinder:
     """
-    Charge un PathFinder depuis un fichier JSON.
-    
+    Load a PathFinder from a JSON file.
+
     Args:
-        json_path: Chemin vers le fichier JSON du graphe
-    
+        json_path: Path to the graph's JSON file
+
     Returns:
-        Instance de PathFinder
+        Instance of PathFinder
     """
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -182,8 +182,8 @@ def load_pathfinder_from_json(json_path: str) -> PathFinder:
 if __name__ == "__main__":
     import os
     import sys
-    
-    # Charger le graphe depuis le JSON (plusieurs possibilités)
+
+    # Load the graph from JSON (multiple possibilities)
     possible_paths = [
         os.path.join(os.path.dirname(__file__), '../data/graph/corridor_graph.json'),
         os.path.join(os.getcwd(), 'data/graph/corridor_graph.json'),
@@ -198,18 +198,18 @@ if __name__ == "__main__":
             break
     
     if json_path is None:
-        print("❌ Fichier corridor_graph.json non trouvé dans les emplacements suivants:")
+        print("❌ File corridor_graph.json not found in the following locations:")
         for path in possible_paths:
             print(f"  - {os.path.abspath(path)}")
-        print("\nExécutez d'abord graph_builder.py pour créer le graphe.")
+        print("\nPlease run graph_builder.py first to create the graph.")
         sys.exit(1)
-    
-    print(f"📁 Utilisation du fichier: {os.path.abspath(json_path)}")
-    
+
+    print(f"📁 Using file: {os.path.abspath(json_path)}")
+
     try:
         pathfinder = load_pathfinder_from_json(json_path)
-        
-        # Exemple d'utilisation
+
+        # Example usage
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
@@ -218,30 +218,30 @@ if __name__ == "__main__":
         if len(rooms) >= 2:
             start_room = rooms[0]
             end_room = rooms[-1]
-            
-            print(f"Recherche du chemin entre {start_room} et {end_room}")
-            
+
+            print(f"Searching for path between {start_room} and {end_room}")
+
             result = pathfinder.find_shortest_path(start_room, end_room)
             
             if result:
                 print(f"Distance: {result['distance']:.2f}m")
-                print(f"Chemin: {' -> '.join(result['path'])}")
-                print(f"Nombre de nœuds: {result['nodes_count']}")
+                print(f"Path: {' -> '.join(result['path'])}")
+                print(f"Number of nodes: {result['nodes_count']}")
             else:
-                print("Aucun chemin trouvé")
-        
-        # Exemple: tous les chemins depuis la première salle
+                print("No path found")
+
+        # Example: all paths from the first room
         if rooms:
             first_room = rooms[0]
-            print(f"\nTous les chemins depuis {first_room}:")
-            
+            print(f"\nAll paths from {first_room}:")
+
             all_paths = pathfinder.find_all_paths_from_node(first_room, max_distance=100)
             
             for destination, info in sorted(all_paths.items(), key=lambda x: x[1]['distance']):
                 print(f"  -> {destination}: {info['distance']:.2f}m")
     
     except FileNotFoundError:
-        print(f"Fichier non trouvé: {json_path}")
-        print("Exécutez d'abord graph_builder.py pour créer le graphe.")
+        print(f"File not found: {json_path}")
+        print("Please run graph_builder.py first to create the graph.")
     except Exception as e:
-        print(f"Erreur: {e}")
+        print(f"Error: {e}")
