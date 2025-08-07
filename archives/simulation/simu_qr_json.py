@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 from algorithms.fingerprint import set_origin, ll_to_local
-from scripts.utils import read_json_safe, cfg
+from services.utils import read_json_safe
+from config import DEFAULT_POSXY, QR_EVENTS_FILE
 
 def run_qr_simulation(qr_json_path: str,
                       origin_lon: float,
@@ -51,10 +52,10 @@ def run_qr_simulation(qr_json_path: str,
     plt.show()
 
 def main():
-    qr_path = str(cfg.QR_EVENTS)
+    qr_path = str(QR_EVENTS_FILE)
     run_qr_simulation(qr_path,
-                      origin_lon=cfg.DEFAULT_POSXY[0],
-                      origin_lat=cfg.DEFAULT_POSXY[1])
+                      origin_lon=DEFAULT_POSXY[0],
+                      origin_lat=DEFAULT_POSXY[1])
 
 if __name__ == "__main__":
     main()

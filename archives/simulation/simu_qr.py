@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from scripts.utils import write_json_safe, read_json_safe, get_room_position
+from services.utils import write_json_safe, read_json_safe, get_room_position
 from algorithms.fingerprint import set_origin, ll_to_local
 
 def simulate_qr_sequence(room_list, interval_s=1.0, temp_json="simulation/qr_sim.json"):

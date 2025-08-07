@@ -2,22 +2,22 @@
 # It reads the latest data from CSV files, updates the PDR trace, fingerprint current data"
 
 import argparse
-from pathlib import Path
-from datetime import datetime, timezone 
+from pathlib import Path 
 import pandas as pd
-from scripts.utils import (
-    cfg, get_logger,
+from services.utils import (
+    get_logger,
     read_csv_safe, write_csv_safe,
     read_json_safe, write_json_safe,
     default_pdr_row, default_fingerprint_row, get_room_position, default_qr_event
 )
+import config
 
 def update_pdr(room, logger):
-    src = cfg.PROCESSED_DIR / f"room_{room}_processed.csv"
-    dst = cfg.PDR_TRACE
+    src = config.PROCESSED_DIR / f"room_{room}_processed.csv"
+    dst = config.PDR_TRACE
     df  = read_csv_safe(src)
     if not df.empty:
-        cols = [c for c in cfg.PDR_COLUMNS if c in df.columns]
+        cols = [c for c in config.PDR_COLUMNS if c in df.columns]
         write_csv_safe(df.tail(1)[cols], dst)
         logger.info(f"PDR updated ← {src.name}")
     else:
@@ -26,15 +26,15 @@ def update_pdr(room, logger):
 
 def update_fp(room, logger):
     # if we don’t yet have a global knn_train.csv, skip fingerprint
-    knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
+    knn_path = config.STATS_DIR / config.GLOBAL_KNN
     if not knn_path.exists():
         logger.warning(f"No knn_train.csv found at {knn_path}, skipping FP update")
         # write default RSSI row so geolocate sees “no FP data”
-        write_csv_safe(pd.DataFrame([default_fingerprint_row()]), cfg.FP_CURRENT)
+        write_csv_safe(pd.DataFrame([default_fingerprint_row()]), config.FP_CURRENT)
         return
 
-    src = cfg.RECORDINGS_DIR / f"door_{room.replace('-','_')}" / 'latest.csv'
-    dst = cfg.FP_CURRENT
+    src = config.RECORDINGS_DIR / f"door_{room.replace('-','_')}" / 'latest.csv'
+    dst = config.FP_CURRENT
     df  = read_csv_safe(src)
     if not df.empty:
         ap = [c for c in df.columns if c.lower().startswith('ap')]
@@ -45,67 +45,62 @@ def update_fp(room, logger):
         logger.warning("Fingerprint default created")
 
 def update_qr(room, logger):
-    """Mise à jour complète du fichier QR"""
+    """Update the QR events file for a specific room."""
     try:
-        # 1. Lire le fichier existant
-        events_path = cfg.QR_EVENTS
-        logger.info(f"Début mise à jour QR pour salle {room}")
-        logger.info(f"Chemin fichier: {events_path}")
+        # 1. Read the existing file
+        events_path = config.QR_EVENTS_FILE
+        logger.info(f"Starting QR update for room {room}")
+        logger.info(f"File path: {events_path}")
 
-        # 2. Récupérer la position réelle de la salle
+        # 2. Get the actual position of the room
         try:
             lon, lat = get_room_position(room)
-            if lon == 0.0 and lat == 0.0:  # Position par défaut
-                logger.warning(f"Aucune position trouvée pour la salle {room}")
-                lon, lat = cfg.DEFAULT_POSXY
+            if lon == 0.0 and lat == 0.0:  # Default position
+                logger.warning(f"No position found for room {room}")
+                lon, lat = config.DEFAULT_POSXY
         except Exception as e:
-            logger.error(f"Erreur lors de la récupération de la position: {str(e)}")
-            lon, lat = cfg.DEFAULT_POSXY  
+            logger.error(f"Error retrieving position: {str(e)}")
+            lon, lat = config.DEFAULT_POSXY
 
-        logger.info(f"Position utilisée pour le reset: ({lon}, {lat})")
+        logger.info(f"Position used for reset: ({lon}, {lat})")
 
-        # 3. Créer le nouvel événement
+        # 3. Create the new event
         new_event = default_qr_event(room, lon, lat)
 
-        # 4. **Écraser complètement le fichier avec le seul nouvel événement**
+        # 4. **Overwrite the file with the new event**
         write_json_safe([new_event], events_path)
-        logger.info("Fichier QR écrasé avec un seul nouvel événement")
+        logger.info("QR file overwritten with a single new event")
 
-        # 5. Vérification
+        # 5. Verification
         saved_events = read_json_safe(events_path)
         if saved_events != [new_event]:
-            logger.error("Problème: l'événement sauvegardé ne correspond pas à l'attendu")
+            logger.error("Problem: saved event does not match expected")
         else:
-            logger.info(f"Événement correctement sauvegardé: {saved_events[-1]}")
+            logger.info(f"Event correctly saved: {saved_events[-1]}")
 
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour des événements QR: {e}")
+        logger.error(f"Error updating QR events: {e}")
         raise
 
 
 def update_localization_files(df: pd.DataFrame, folder_name: str, room: str):
     """
-    Met à jour les fichiers de localisation (pdr_traces.csv, fingerprint.csv, qr_map.csv) avec les données traitées.
+    Update localization files (pdr_traces.csv, fingerprint.csv, qr_map.csv) with processed data.
     """
     logger = get_logger(__name__)
 
-    # Sauvegarde des données traitées
-    processed_file = cfg.PROCESSED_DIR / f"room_{room}_processed.csv"
+    # Save processed data
+    processed_file = config.PROCESSED_DIR / f"room_{room}_processed.csv"
     write_csv_safe(df, processed_file)
 
-    # Mise à jour des fichiers
+    # Update files
     update_pdr(room, logger)
 
-    fp_src = Path(cfg.RECORDINGS_DIR) / folder_name / 'latest.csv'
-    if fp_src.exists():
-        update_fp(room, logger)
-    else:
-        logger.warning(f"Pas de fichier fingerprint trouvé pour {room}")
+    update_fp(room, logger)
 
     update_qr(room, logger)
 
-    logger.info(f"Fichiers de localisation mis à jour pour la salle {room}")
-
+    logger.info(f"Localization files updated for room {room}")
 
 
 def main(room, verbose=False):

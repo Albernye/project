@@ -7,7 +7,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from scripts.utils import SENSOR_MAPPING, UNCALIBRATED_SUFFIX, get_logger, get_room_position
+from services.utils import get_logger, get_room_position
+import config
 
 logger = get_logger(__name__)
 
@@ -25,8 +26,8 @@ def list_sensor_files(folder: Path) -> list[Path]:
     """Liste les fichiers de capteurs valides dans un dossier."""
     files: list[Path] = []
     for f in folder.glob("*.csv"):
-        key = f.stem.lower().replace('_0', '').replace(UNCALIBRATED_SUFFIX, '')
-        if key in SENSOR_MAPPING:
+        key = f.stem.lower().replace('_0', '').replace(config.UNCALIBRATED_SUFFIX, '')
+        if key in config.SENSOR_MAPPING:
             files.append(f)
             logger.debug(f"Sensor file matched: {f.name} as {key}")
         else:
@@ -50,14 +51,14 @@ def read_sensor_csv(file: Path, room: str) -> pd.DataFrame | None:
 
     df.columns = df.columns.str.strip()
     name = file.stem.lower()
-    unc = name.endswith(UNCALIBRATED_SUFFIX)
-    key = name.replace('_0', '').replace(UNCALIBRATED_SUFFIX, '')
-    sensor = SENSOR_MAPPING.get(key)
+    unc = name.endswith(config.UNCALIBRATED_SUFFIX)
+    key = name.replace('_0', '').replace(config.UNCALIBRATED_SUFFIX, '')
+    sensor = config.SENSOR_MAPPING.get(key)
     if not sensor:
         logger.warning(f"Unknown sensor key '{key}' in file {file.name}")
         return None
 
-    df['sensor_type'] = sensor + (UNCALIBRATED_SUFFIX if unc else '')
+    df['sensor_type'] = sensor + (config.UNCALIBRATED_SUFFIX if unc else '')
     df['room'] = room
     df['source_file'] = file.name
 

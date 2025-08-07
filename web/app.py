@@ -11,12 +11,12 @@ from flask import Flask, render_template, request, jsonify
 # Ajouter le répertoire racine au PYTHONPATH
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.geolocate import get_latest_positions
+from services.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
-from scripts.record_realtime import record_realtime
+from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
-from scripts.utils import get_room_position, cfg
-from scripts.update_live import update_qr, update_localization_files
+from services.utils import get_room_position, cfg
+from services.update_live import update_qr, update_localization_files
 
 # Configuration du logging
 logging.basicConfig(level=logging.DEBUG,

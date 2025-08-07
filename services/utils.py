@@ -1,63 +1,14 @@
-"""
-Fonctions partagées et configuration des chemins - Version adaptée aux formats réels
-"""
 import json
 import logging
 from pathlib import Path
 from datetime import datetime, timezone 
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict
 import pandas as pd
-import numpy as np
 import csv
-
-# Mapping capteurs et suffixe
-SENSOR_MAPPING = { 
-    'accelerometer': 'accelerometer', 
-    'gyroscope': 'gyroscope', 
-    'magnetometer': 'magnetometer',
-    'barometer': 'barometer', 
-    'gravity': 'gravity', 
-    'orientation': 'orientation',
-    'compass': 'compass', 
-    'pedometer': 'pedometer', 
-    'microphone': 'microphone' 
-}
-UNCALIBRATED_SUFFIX = 'uncalibrated'
+import config
 
 # =============================================================================
-# 1) CONFIGURATION CENTRALISÉE
-# =============================================================================
-class Config:
-    BASE_DIR       = Path(__file__).resolve().parent.parent
-    DATA_DIR       = BASE_DIR / 'data'
-    RAW_DIR        = DATA_DIR / 'raw'
-    PROCESSED_DIR  = DATA_DIR / 'processed'
-    STATS_DIR      = DATA_DIR / 'stats'
-    RECORDINGS_DIR = DATA_DIR / 'recordings'
-    PDR_TRACE      = DATA_DIR / 'pdr_traces' / 'current.csv'
-    PDR_COLUMNS    = ('timestamp', 'POSI_X', 'POSI_Y', 'floor')
-    FP_CURRENT     = RECORDINGS_DIR / 'current_fingerprints.csv'
-    QR_EVENTS      = DATA_DIR / 'qr_events.json'
-    ROOM_POS_CSV   = DATA_DIR / 'room_positions.csv'
-    
-    MIN_ROWS       = 10
-    ROOM_PREFIX    = "2-"
-    GLOBAL_KNN     = "knn_train.csv"
-    
-    DEFAULT_FLOOR  = 2
-    DEFAULT_POSXY  = (2.194291,41.406351)
-    DEFAULT_RSSI   = -80
-    DEFAULT_AP_N   = 5
-    USE_SIMULATED_IMU = True
-    SIM_DURATION      = 10.0
-    SIM_FS            = 100.0
-
-cfg = Config()
-
-logger = logging.getLogger(__name__)
-
-# =============================================================================
-# 2) LOGGING
+# 1) LOGGING
 # =============================================================================
 def get_logger(name: str=__name__, verbose: bool=False) -> logging.Logger:
     level = logging.DEBUG if verbose else logging.INFO
@@ -68,9 +19,10 @@ def get_logger(name: str=__name__, verbose: bool=False) -> logging.Logger:
     )
     return logging.getLogger(name)
 
+logger = get_logger(verbose=True)
 
 # =============================================================================
-# 3) SAFE I/O (CSV & JSON)
+# 2) SAFE I/O (CSV & JSON)
 # =============================================================================
 def read_csv_safe(path: Path, **kwargs) -> pd.DataFrame:
     try:
@@ -91,7 +43,7 @@ def read_json_safe(path: Path) -> Any:
 
 def write_json_safe(obj: Any, path: Path | str):
     """
-    Écrit un objet JSON de façon atomique en s'assurant que le dossier existe.
+    Write a JSON object to a file, ensuring the directory exists.
     """
     p = Path(path) if not isinstance(path, Path) else path
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -101,29 +53,28 @@ def write_json_safe(obj: Any, path: Path | str):
     temp_path.rename(p)
 
 # =============================================================================
-# 4) DEFAULTS GENERATORS
+# 3) DEFAULTS GENERATORS
 # =============================================================================
 def default_pdr_row() -> Dict[str, Any]:
     return {
         "timestamp": datetime.now(timezone.utc).isoformat()+"Z",
-        "POSI_X":    cfg.DEFAULT_POSXY[0],
-        "POSI_Y":    cfg.DEFAULT_POSXY[1],
-        "floor":     cfg.DEFAULT_FLOOR
+        "POSI_X":    config.DEFAULT_POSXY[0],
+        "POSI_Y":    config.DEFAULT_POSXY[1],
+        "floor":     config.DEFAULT_FLOOR
     }
 
 def default_fingerprint_row() -> Dict[str, int]:
-    return {f"AP{i}": cfg.DEFAULT_RSSI for i in range(1, cfg.DEFAULT_AP_N+1)}
+    return {f"AP{i}": config.DEFAULT_RSSI for i in range(1, config.DEFAULT_AP_N+1)}
 
 def default_qr_event(room: str,
                      lon: float | None = None,
                      lat: float | None = None) -> dict:
     """
-    Crée un événement QR pour la salle `room`.
-    Si (lon, lat) sont fournis, on les utilise ;
-    sinon on tombe sur DEFAULT_POSXY.
+    Create a default QR event with the current timestamp and room position.
+    If lon or lat are None, use the default position from config.
     """
     if lon is None or lat is None:
-        lon, lat = cfg.DEFAULT_POSXY
+        lon, lat = config.DEFAULT_POSXY
 
     return {
         "room": room,
@@ -133,10 +84,10 @@ def default_qr_event(room: str,
 
 
 # =============================================================================
-# 5) CONCATÉNATION GÉNÉRIQUE
+# 4) CONCATENATE AND FILL
 # =============================================================================
 def concat_fill(dfs: List[pd.DataFrame]) -> pd.DataFrame:
-    """Concatène des DataFrames en gérant les colonnes manquantes."""
+    """Concatenate DataFrames, filling missing columns with NA."""
     if not dfs:
         return pd.DataFrame()
     all_cols = set().union(*(df.columns for df in dfs))
@@ -146,7 +97,7 @@ def concat_fill(dfs: List[pd.DataFrame]) -> pd.DataFrame:
     return pd.concat(dfs, ignore_index=True)
 
 # =============================================================================
-# 6) POSITION DES SALLES
+# 5) ROOM POSITIONING
 # =============================================================================
 
 def load_room_positions(csv_file_path):
@@ -158,18 +109,18 @@ def load_room_positions(csv_file_path):
             for row in csv_reader:
                 room_positions[row['room']] = (float(row['position_x']), float(row['position_y']))
     except FileNotFoundError:
-        print(f"⚠️ Fichier {csv_file_path} non trouvé")
+        print(f"⚠️ File {csv_file_path} not found")
     except Exception as e:
-        print(f"⚠️ Erreur lors du chargement des positions: {e}")
+        print(f"⚠️ Error loading positions: {e}")
     return room_positions
 
-# Cache pour les positions des salles
+# Cache for room positions
 _room_positions_cache = None
 
 def get_room_position(room_number: str) -> tuple[float, float]:
     """
-    Retourne (longitude, latitude) pour la salle demandée,
-    à partir de data/room_positions.csv.
+    Return (longitude, latitude) for the requested room number,
+    from data/room_positions.csv.
     """
     global _room_positions_cache
     if _room_positions_cache is None:
@@ -177,16 +128,16 @@ def get_room_position(room_number: str) -> tuple[float, float]:
         csv_path = project_root / "data" / "room_positions.csv"
         
         if not csv_path.exists():
-            logger.warning(f"[get_room_position] room_positions.csv non trouvé: {csv_path}")
-            logger.warning("               Utilisation des coordonnées par défaut (0.0, 0.0)")
+            logger.warning(f"[get_room_position] room_positions.csv not found: {csv_path}")
+            logger.warning("               Using default coordinates (0.0, 0.0)")
             return (0.0, 0.0)
-        
-        logger.debug(f"[get_room_position] Chargement de {csv_path}")
+
+        logger.debug(f"[get_room_position] Loading {csv_path}")
         _room_positions_cache = load_room_positions(csv_path)
-        logger.info(f"[get_room_position] {_room_positions_cache!r} positions chargées")
-    
+        logger.info(f"[get_room_position] {_room_positions_cache!r} positions loaded")
+
     if room_number not in _room_positions_cache:
-        logger.warning(f"[get_room_position] Salle '{room_number}' non trouvée dans cache")
+        logger.warning(f"[get_room_position] Room '{room_number}' not found in cache")
         return (0.0, 0.0)
     
     coord = _room_positions_cache[room_number]

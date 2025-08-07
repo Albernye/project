@@ -9,7 +9,11 @@ from algorithms.PDR import (
     weiberg_stride_length_heading_position
 )
 from algorithms.fingerprint import set_origin, ll_to_local
-from scripts.utils import cfg, read_json_safe
+from services.utils import read_json_safe
+from config import (
+    DEFAULT_POSXY, SIM_DURATION, SIM_FS, QR_EVENTS_FILE,
+    PDR_TRACE, FP_CURRENT, ROOM_POS_CSV, SIMULATED_IMU
+)
 from pathlib import Path
 import re
 
@@ -41,7 +45,7 @@ def run_combined_simple(merged_csv_path: str, qr_json_path: str):
     """
     
     # 1) Initialize origin
-    origin_lon, origin_lat = cfg.DEFAULT_POSXY
+    origin_lon, origin_lat = DEFAULT_POSXY
     set_origin(origin_lon, origin_lat)
     print(f"Origin set to: {origin_lon}, {origin_lat}")
     
@@ -236,7 +240,7 @@ def run_combined_simple(merged_csv_path: str, qr_json_path: str):
 
 if __name__ == "__main__":
     try:
-        result = run_combined_simple("data/merged.csv", str(cfg.QR_EVENTS))
+        result = run_combined_simple("data/merged.csv", str(QR_EVENTS_FILE))
         print("✅ Simulation completed successfully!")
     except Exception as e:
         print(f"❌ Error running simulation: {e}")
