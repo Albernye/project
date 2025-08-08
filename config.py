@@ -101,7 +101,6 @@ config = Config()
 
 class EmailConfig:
     """Configuration for sending emails read dynamically from environment."""
-
     @property
     def smtp_server(self) -> str:
         return os.getenv('SMTP_SERVER', 'smtp.gmail.com')
@@ -121,6 +120,14 @@ class EmailConfig:
     @property
     def recipient_email(self) -> Optional[str]:
         return os.getenv('RECIPIENT_EMAIL')
+
+    @recipient_email.setter
+    def recipient_email(self, value):
+        """Setter for recipient_email to modify environment variable for testing."""
+        if value is None:
+            os.environ.pop('RECIPIENT_EMAIL', None)  # Remove the environment variable
+        else:
+            os.environ['RECIPIENT_EMAIL'] = value     # Set the environment variable
 
     def is_configured(self) -> bool:
         """

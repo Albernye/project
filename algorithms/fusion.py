@@ -1,4 +1,4 @@
-# This code fuses PDR and fingerprint positions using a Kalman filter
+# This code fuses PDR (and fingerprint) positions using a Kalman filter
 
 import logging
 from algorithms.filters import KalmanFilter
@@ -10,7 +10,7 @@ def get_floor(room: str) -> int:
     try: return int(room.split('-')[0])
     except: return 0
 
-def fuse(pdr_delta=None, wifi_pose=None, qr_anchor=None, room=None):
+def fuse(pdr_delta=None, qr_anchor=None, room=None):
     global _kf
     if _kf is None:
         _kf = KalmanFilter()
@@ -26,11 +26,13 @@ def fuse(pdr_delta=None, wifi_pose=None, qr_anchor=None, room=None):
     if pdr_delta:
         _kf.predict(pdr_delta)
 
+    # Wi-Fi fingerprinting deprecated: code kept for reference
+    # defunct wifi_pose argument removed from signature
     # Wi-Fi update
-    if wifi_pose:
-        xf,yf,ff = wifi_pose
-        if ff is None and room: ff=get_floor(room)
-        _kf.update((xf,yf,ff), source='wifi')
+    # if wifi_pose:
+    #     xf,yf,ff = wifi_pose
+    #     if ff is None and room: ff=get_floor(room)
+    #     _kf.update((xf,yf,ff), source='wifi')
 
     state=_kf.get_state()
     logger.info(f"Fused state: {state}")

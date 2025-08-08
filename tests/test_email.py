@@ -44,3 +44,21 @@ def test_send_email_mailtrap():
 
 if __name__ == '__main__':
     pytest.main([__file__, '-s'])  # The '-s' option allows printed messages to be displayed
+
+def test_send_email_missing_config():
+    """Test error when config is missing."""
+    import types
+    import services.send_email as se
+    se.email_config.is_configured = lambda: False
+    se.email_config.get_missing_vars = lambda: ['EMAIL_USER']
+    result = se.send_email('Subject', 'Body', to_email='dest@example.com')
+    assert result is False
+
+def test_send_email_no_recipient():
+    """Test error when no recipient is set."""
+    import types
+    import services.send_email as se
+    se.email_config.is_configured = lambda: True
+    se.email_config.recipient_email = None
+    result = se.send_email('Subject', 'Body', to_email=None)
+    assert result is False

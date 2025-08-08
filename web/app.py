@@ -16,6 +16,7 @@ from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
 from services.utils import get_room_position
 from services.update_live import update_qr, update_localization_files
+from services.send_email import send_email
 import config as cfg
 
 # Logging configuration
@@ -115,12 +116,12 @@ def get_position():
         return jsonify({"error": "Missing 'room' parameter"}), 400
     try:
         pdr_pos, finger_pos, qr_reset = get_latest_positions()
-        fused_pos = fuse(pdr_pos, finger_pos, qr_reset, room=room)
+        fused_pos = fuse(pdr_pos, qr_reset, room=room)
         pos_list = list(map(float, fused_pos)) if fused_pos else [0.0, 0.0, 0.0]
         return jsonify({
             "position": pos_list,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sources": {"pdr": bool(pdr_pos), "fingerprint": bool(finger_pos), "qr_reset": bool(qr_reset)}
+            "sources": {"pdr": bool(pdr_pos), "fingerprint": False, "qr_reset": bool(qr_reset)}
         })
     except Exception as e:
         logger.error(f"Error in /position: {e}")
@@ -303,10 +304,26 @@ def scan_qr():
     logger.info(f"QR scan data: {data}")
     room = data.get("room")
     room_norm = normalize_room_id(room)
-    logger = app.logger
 
     update_qr(room_norm, logger)
-    return {"status": "reset applique"}, 200
+
+    # Email alert logic
+    recipient = None  # Use default from config/email_config
+    subject = f"QR Scan Alert: Room {room_norm}"
+    body = f"QR code scanned for room {room_norm} at {datetime.now().isoformat()}"
+    try:
+        email_success = send_email(subject, body, to_email=recipient)
+        if email_success:
+            logger.info(f"Email alert sent for QR scan: {room_norm}")
+            status = "reset applique, email sent"
+        else:
+            logger.error(f"Email alert failed for QR scan: {room_norm}")
+            status = "reset applique, email failed"
+    except Exception as e:
+        logger.error(f"Exception during email alert: {e}")
+        status = "reset applique, email error"
+
+    return {"status": status, "room": room_norm}, 200
 
 @app.route('/data')
 def view_data():
@@ -368,7 +385,7 @@ def update_position():
 
         # Fusion Kalman
         try:
-            fused_position = fuse(pdr_pos, finger_pos, qr_reset, room=room)
+            fused_position = fuse(pdr_pos, qr_reset, room=room)
         except Exception as e:
             logger.error(f"Error in Kalman fusion: {e}")
             fused_position = None
