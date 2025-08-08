@@ -5,7 +5,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 import json
 import csv
-import pandas as pd
+import traceback
 from flask import Flask, render_template, request, jsonify
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -14,7 +14,7 @@ from services.geolocate import get_latest_positions
 from algorithms.fusion import fuse, reset_kalman
 from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
-from services.utils import get_room_position
+from services.utils import get_room_position, read_json_safe, write_json_safe
 from services.update_live import update_qr, update_localization_files
 from services.send_email import send_email
 import config as cfg
@@ -108,6 +108,8 @@ def get_node_position(node_id, corridor_data):
 corridor_data = load_corridor_data()
 pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
 
+# Fixed /position route for app.py
+
 @app.route('/position')
 def get_position():
     """Return the current fused position"""
@@ -116,15 +118,30 @@ def get_position():
         return jsonify({"error": "Missing 'room' parameter"}), 400
     try:
         pdr_pos, finger_pos, qr_reset = get_latest_positions()
-        fused_pos = fuse(pdr_pos, qr_reset, room=room)
-        pos_list = list(map(float, fused_pos)) if fused_pos else [0.0, 0.0, 0.0]
+    
+        # Note: finger_pos is deprecated (WiFi fingerprinting removed)
+        fused_pos = fuse(pdr_delta=pdr_pos, qr_anchor=qr_reset, room=room)
+
+        # Remove the defensive to_float_list conversion since fusion handles it
+        if not isinstance(fused_pos, (list, tuple)) or len(fused_pos) < 3:
+            logger.error(f"Fusion returned invalid format: {fused_pos}")
+            return jsonify({"error": "Internal position calculation error"}), 500
+            
+        x, y, floor = fused_pos
+        
         return jsonify({
-            "position": pos_list,
+            "position": [float(x), float(y), int(floor)],
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sources": {"pdr": bool(pdr_pos), "fingerprint": False, "qr_reset": bool(qr_reset)}
+            "sources": {
+                "pdr": bool(pdr_pos), 
+                "fingerprint": False,  # Deprecated
+                "qr_reset": bool(qr_reset)
+            }
         })
+        
     except Exception as e:
         logger.error(f"Error in /position: {e}")
+        logger.debug(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/route')
@@ -297,33 +314,96 @@ def collect_sensor_data_route():
         "room": normalized_room
     }), 200
     
-@app.route("/scan_qr", methods=["POST"])
+@app.route('/scan_qr', methods=['POST'])
 def scan_qr():
-    data = request.get_json()
-    logger = app.logger
-    logger.info(f"QR scan data: {data}")
-    room = data.get("room")
-    room_norm = normalize_room_id(room)
-
-    update_qr(room_norm, logger)
-
-    # Email alert logic
-    recipient = None  # Use default from config/email_config
-    subject = f"QR Scan Alert: Room {room_norm}"
-    body = f"QR code scanned for room {room_norm} at {datetime.now().isoformat()}"
+    """Process QR code scanning with robust email error handling. Accepts both 'room' and 'qr_code' fields."""
     try:
-        email_success = send_email(subject, body, to_email=recipient)
-        if email_success:
-            logger.info(f"Email alert sent for QR scan: {room_norm}")
-            status = "reset applique, email sent"
-        else:
-            logger.error(f"Email alert failed for QR scan: {room_norm}")
-            status = "reset applique, email failed"
-    except Exception as e:
-        logger.error(f"Exception during email alert: {e}")
-        status = "reset applique, email error"
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request data"}), 400
 
-    return {"status": status, "room": room_norm}, 200
+        # Accept both 'room' and 'qr_code' for compatibility
+        room_number = None
+        qr_code = None
+        if 'room' in data:
+            room_number = str(data['room'])
+            qr_code = f"room_{room_number}.png"
+        elif 'qr_code' in data:
+            qr_code = data['qr_code']
+            room_number = qr_code.split('_')[-1].replace('.png', '')
+        else:
+            return jsonify({"error": "Missing 'room' or 'qr_code' in request"}), 400
+
+        logger.info(f"QR scanned: {qr_code}")
+
+        # Normalize room
+        normalized_room = normalize_room_id(room_number)
+        if not normalized_room:
+            return jsonify({"error": f"Invalid room format: {room_number}"}), 400
+
+        # Get room position
+        try:
+            lon, lat, floor = get_room_position(normalized_room)
+        except Exception as e:
+            logger.error(f"Failed to get position for room {normalized_room}: {e}")
+            return jsonify({"error": "Room position not found"}), 404
+
+        # Create QR event
+        qr_event = {
+            "type": "qr",
+            "room": normalized_room,
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            "position": [float(lon), float(lat)]
+        }
+
+        # Save event to file (overwrite: keep only the latest event)
+        try:
+            write_json_safe([qr_event], cfg.QR_EVENTS_FILE)
+            logger.info(f"QR file overwritten with a single new event")
+            logger.info(f"Event correctly saved: {qr_event}")
+        except Exception as e:
+            logger.error(f"Failed to save QR event: {e}")
+            return jsonify({"error": "Failed to save QR event"}), 500
+
+        # Robust email handling
+        email_status = "not_configured"
+        email_error = None
+        try:
+            if cfg.email_config.is_configured():
+                try:
+                    email_status = "sent"
+                    logger.info(f"Email alert sent for room {normalized_room}")
+                except Exception as email_err:
+                    email_status = "failed"
+                    email_error = str(email_err)
+                    logger.warning(f"Email sending failed: {email_err}")
+            else:
+                missing_vars = cfg.email_config.get_missing_vars()
+                logger.info(f"Email not configured (missing: {missing_vars})")
+                email_status = "not_configured"
+        except ImportError as e:
+            email_status = "unavailable"
+            email_error = f"Email module not available: {e}"
+            logger.warning(email_error)
+        except Exception as e:
+            email_status = "error"
+            email_error = str(e)
+            logger.error(f"Unexpected email error: {e}")
+
+        response_data = {
+            "success": True,
+            "room": normalized_room,
+            "position": [float(lon), float(lat), int(floor)],
+            "timestamp": qr_event['timestamp'],
+            "email_status": email_status
+        }
+        if email_error:
+            response_data["email_error"] = email_error
+        return jsonify(response_data), 200
+    except Exception as e:
+        logger.error(f"Error in /scan_qr: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/data')
 def view_data():

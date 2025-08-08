@@ -117,32 +117,29 @@ def load_room_positions(csv_file_path):
 # Cache for room positions
 _room_positions_cache = None
 
-def get_room_position(room_number: str) -> tuple[float, float]:
+def get_room_position(room_number: str) -> tuple[float, float, int]:
     """
-    Return (longitude, latitude) for the requested room number,
-    from data/room_positions.csv.
+    Return (longitude, latitude, floor) for the requested room number,
+    from data/room_positions.csv. Always returns a tuple of floats for fusion compatibility.
     """
     global _room_positions_cache
     if _room_positions_cache is None:
         project_root = Path(__file__).resolve().parent.parent
         csv_path = project_root / "data" / "room_positions.csv"
-        
         if not csv_path.exists():
             logger.warning(f"[get_room_position] room_positions.csv not found: {csv_path}")
-            logger.warning("               Using default coordinates (0.0, 0.0)")
-            return (0.0, 0.0)
-
+            logger.warning("               Using default coordinates (0.0, 0.0, 2)")
+            return (0.0, 0.0, 2)
         logger.debug(f"[get_room_position] Loading {csv_path}")
         _room_positions_cache = load_room_positions(csv_path)
         logger.info(f"[get_room_position] {_room_positions_cache!r} positions loaded")
-
     if room_number not in _room_positions_cache:
         logger.warning(f"[get_room_position] Room '{room_number}' not found in cache")
-        return (0.0, 0.0)
-    
+        return (0.0, 0.0, 2)
     coord = _room_positions_cache[room_number]
     logger.debug(f"[get_room_position] '{room_number}' -> {coord}")
-    return coord
+    # Always return (lon, lat, floor)
+    return (float(coord[0]), float(coord[1]), 2)
 
 def get_qr_reset_position(qr_code):
     """Return the position of a room based on a QR code."""

@@ -41,7 +41,7 @@ def normalize_room_id(room_id):
     For example:
       - "201" -> "2-01"
       - "2-01" -> "2-01"
-      - "15"  -> "0-15" 
+      - "15"  -> "2-15" 
     """
     if not room_id:
         return None
@@ -61,7 +61,7 @@ def normalize_room_id(room_id):
         num   = int(room_id[1:])
         return f"{floor}-{num:02d}"
 
-    # Case 2 digits "NN" (2 number digits)
+    # Case 2 digits "NN" (2 number digits) - FIXED: default to floor 2
     if room_id.isdigit():
         num = int(room_id)
         return f"2-{num:02d}"
@@ -71,10 +71,17 @@ def normalize_room_id(room_id):
 
 def get_node_position(node_id, corridor_data):
     """Retrieve the position of a node (room or corridor point)"""
-    # If it's a room
     if node_id.startswith('2-'):
         try:
-            return get_room_position(node_id)
+            pos = get_room_position(node_id)
+            # Ensure we always return numeric coordinates, never Path
+            if isinstance(pos, tuple) and len(pos) >= 2:
+                return [float(pos[0]), float(pos[1])]
+            elif isinstance(pos, (list, tuple)) and len(pos) >= 2:
+                return [float(pos[0]), float(pos[1])]
+            else:
+                logger.warning(f"Invalid position format for room {node_id}: {pos}")
+                return None
         except Exception as e:
             logger.warning(f"Position not found for room {node_id}: {e}")
             return None
@@ -84,13 +91,13 @@ def get_node_position(node_id, corridor_data):
         for corridor_name, corridor_info in corridor_data['corridor_structure'].items():
             for point_name, x, y in corridor_info.get('points', []):
                 if point_name == node_id:
-                    return [x, y]
+                    return [float(x), float(y)]
 
     logger.warning(f"Position not found for node {node_id}")
     return None
 
 def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[Tuple[float, float]]:
-    """Return the geographic position of the last QR event."""
+    """Return the geographic position of the last QR event as (lon, lat) tuple."""
     if qr_events_path:
         events = read_json_safe(qr_events_path)
     elif events is None:
@@ -121,22 +128,62 @@ def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[T
     try:
         lon, lat = map(float, position)
         logger.info(f"QR position: ({lon}, {lat})")
-        return lon, lat
+        # FIXED: Always return exactly 2 values as documented
+        return (lon, lat)
     except Exception as e:
         logger.error(f"Invalid QR position: {position}, error: {e}")
     return None
 
-def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
+def normalize_position_to_3tuple(pos, default_floor=None) -> Optional[Tuple[float, float, int]]:
+    """
+    Normalize any position format to (x, y, floor) tuple.
+    Handles 2-tuples, 3-tuples, lists, numpy arrays, etc.
+    """
+    if pos is None:
+        return None
+    
+    if default_floor is None:
+        default_floor = cfg.DEFAULT_FLOOR
+    
+    try:
+        # Handle numpy arrays
+        if hasattr(pos, 'astype'):
+            pos = pos.astype(float).tolist()
+        
+        # Convert to list/tuple if needed
+        if not isinstance(pos, (list, tuple)):
+            logger.warning(f"Unexpected position type: {type(pos)}, value: {pos}")
+            return None
+            
+        pos_list = list(pos)
+        
+        # Ensure we have at least 2 coordinates
+        if len(pos_list) < 2:
+            logger.warning(f"Position has insufficient coordinates: {pos_list}")
+            return None
+            
+        x, y = float(pos_list[0]), float(pos_list[1])
+        
+        # Use provided floor or default
+        if len(pos_list) >= 3:
+            floor = int(pos_list[2])
+        else:
+            floor = default_floor
+            
+        return (x, y, floor)
+        
+    except (ValueError, TypeError) as e:
+        logger.error(f"Failed to normalize position {pos}: {e}")
+        return None
+
+def get_latest_positions() -> Tuple[Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
     """
     Get the latest positions: PDR, (WiFi), QR.
-    Return three tuples or None.
+    Return three 3-tuples (x, y, floor) or None for each.
+    FIXED: Always return consistent 3-tuple format.
     """
     # PDR
-    # if SIMULATED_IMU:
-    #     duration, fs = SIM_DURATION, SIM_FS
-    #     accel, gyro, times = simulate_imu_movement(duration, fs)
-    #     fs = 1.0 / np.mean(np.diff(times))
-    # else:
+    pdr_pos = None
     try:
         res = load_imu(cfg.PDR_TRACE)
         logger.debug(f"DEBUG load_imu returned -> {res!r}")
@@ -144,43 +191,37 @@ def get_latest_positions() -> Tuple[Tuple[float, float, int], Optional[Tuple[flo
         if accel.shape[0] < 2 or fs <= 0:
             raise ValueError("Insufficient IMU data for PDR")
         dx, dy = pdr_delta(accel, gyro, fs)
-        pdr_pos = (dx, dy, cfg.DEFAULT_FLOOR)
+        # FIXED: Normalize PDR delta to 3-tuple
+        pdr_pos = normalize_position_to_3tuple((dx, dy))
     except Exception as e:
         logger.warning(f"PDR skipped: {e}")
-        pdr_pos = None
 
-    # WiFi
-    # fingerprint may not yet be configured
+    # WiFi (deprecated but keeping structure)
     wifi_pos = None
-    # knn_path = cfg.STATS_DIR / cfg.GLOBAL_KNN
-    # if knn_path.exists() and Path(cfg.FP_CURRENT).exists():
-    #     try:
-    #         x, y, floor = get_last_position(
-    #             str(knn_path),
-    #             str(cfg.FP_CURRENT),
-    #             kP=3, kZ=3, R=10.0
-    #         )
-    #         wifi_pos = (x, y, floor)
-    #     except Exception as e:
-    #         logger.warning(f"Fingerprint failed: {e}")
 
     # QR
-    qr_geo = get_last_qr_position(cfg.QR_EVENTS_FILE)
     qr_pos = None
-    if qr_geo:
-        x, y = ll_to_local(*qr_geo)
-        qr_pos = (x, y, cfg.DEFAULT_FLOOR)
+    try:
+        qr_geo = get_last_qr_position(qr_events_path=cfg.QR_EVENTS_FILE)
+        if qr_geo:
+            # qr_geo is (lon, lat), convert to local coordinates
+            x, y = ll_to_local(*qr_geo)
+            # FIXED: Normalize to 3-tuple with default floor
+            qr_pos = normalize_position_to_3tuple((x, y))
+    except Exception as e:
+        logger.warning(f"QR position failed: {e}")
 
+    logger.debug(f"Latest positions - PDR: {pdr_pos}, WiFi: {wifi_pos}, QR: {qr_pos}")
     return pdr_pos, wifi_pos, qr_pos
 
 def safe_get_latest_positions():
-    """Version sécurisée de get_latest_positions avec gestion d'erreur robuste"""
+    """Safe version of get_latest_positions with robust error handling"""
     try:
         return get_latest_positions()
     except Exception as e:
-        logger.error(f"Erreur dans get_latest_positions: {e}")
+        logger.error(f"Error in get_latest_positions: {e}")
         logger.debug(traceback.format_exc())
-        # Retourner des valeurs par défaut plutôt que de faire planter
+        # Return default values rather than crashing
         return None, None, None
 class PositionTracker:
     """Manages the unified position according to QR > WIFI > PDR"""
@@ -207,7 +248,7 @@ class PositionTracker:
         logger.info(f"Position forced: {pos}")
 
 
-# Exécution en standalone
+# Execution in standalone
 if __name__ == '__main__':
     initialize_coordinate_system()
     tracker = PositionTracker()
