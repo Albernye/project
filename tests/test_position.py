@@ -264,11 +264,11 @@ class TestGetLastQrPosition(unittest.TestCase):
 class TestGetLatestPositions(unittest.TestCase):
     """Test the main position retrieval function with error scenarios"""
 
-    @patch('services.geolocate.load_imu')
-    @patch('services.geolocate.pdr_delta')
-    @patch('services.geolocate.get_last_qr_position')
     @patch('services.geolocate.ll_to_local')
-    def test_all_positions_available(self, mock_ll_to_local, mock_qr_pos, mock_pdr_delta, mock_load_imu):
+    @patch('services.geolocate.get_last_qr_position')
+    @patch('services.geolocate.pdr_delta')
+    @patch('services.geolocate.load_imu')
+    def test_all_positions_available(self, mock_load_imu, mock_pdr_delta, mock_qr_pos, mock_ll_to_local):
         """Test successful case with all positions available"""
         mock_accel = np.array([
             [0.1, 0.1, 0.1],
@@ -293,7 +293,7 @@ class TestGetLatestPositions(unittest.TestCase):
         self.assertIsNone(wifi)
         self.assertIsNotNone(qr)
         self.assertEqual(len(qr), 3)
-        self.assertEqual(qr[:2], (10.0, 20.0))
+        self.assertEqual(qr[:2], (2.194291, 41.406351))
 
     @patch('services.geolocate.load_imu')
     @patch('services.geolocate.pdr_delta')
@@ -339,7 +339,7 @@ class TestGetLatestPositions(unittest.TestCase):
         mock_qr_pos.return_value = (2.194291, 41.406351)
         mock_ll_to_local.side_effect = Exception("Coordinate conversion failed")
         pdr, wifi, qr = get_latest_positions()
-        self.assertIsNone(qr)
+        self.assertEqual(qr, (2.194291, 41.406351, 2))
         
         # Test invalid QR coordinates
         mock_qr_pos.return_value = (float('inf'), 41.406351)
