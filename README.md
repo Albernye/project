@@ -74,24 +74,31 @@ project/
 ├── roadmap.txt          # Development checklist
 └── uv.lock              # Dependency lock file for UV
 
-Prerequisites
+```
+
+## Prerequisites
+
 Ensure you have Python installed on your system. The project uses uv for dependency management, which is part of the Astral project. You can install uv using the following command:
+```text
 pip install uv
-Installation
+```
+## Installation
+
 To set up the project locally, follow these steps:
 
 Clone the repository:
-
+```text
 git clone https://github.com/project/indoor-routing.git
 cd indoor-routing
-
+```
 Install dependencies using UV:
-
+```text
 uv sync
-
+```
 Set up environment variables by copying .env.example to .env and adjusting as needed.
 
-Usage
+## Usage
+
 Running the Server
 To start the Flask server, execute the following command from the root directory of the project:
 python web/app.py
@@ -100,11 +107,15 @@ Generating QR Codes
 You can generate QR codes for rooms using the script located in the scripts/qr_generator directory. Run:
 python scripts/qr_generator/generate_qr.py
 This script will create QR codes for each room and save them in the web/qrcodes directory.
-Testing
+
+## Testing
+
 To run tests, use the following command:
 pytest tests/
 This will execute the test suite and provide output regarding test results.
-Contributing
+
+## Contributing
+
 Contributions to the project are welcome! Please ensure that you follow these guidelines when submitting contributions:
 
 Fork the repository and create your feature branch from main.
@@ -112,10 +123,11 @@ Write clear, concise commit messages.
 Ensure your changes do not break existing functionality.
 Submit a pull request detailing what your changes do and why they are necessary.
 
-Contact
+## Contact
+
 For questions or feedback, please reach out to [albernye@gmail.com].
-Roadmap
-Future development goals include:
+
+## Future development goals include:
 
 Adding path visualization to destinations.
 Enhancing the Wi-Fi fingerprinting algorithm for improved accuracy.
