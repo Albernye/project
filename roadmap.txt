@@ -1,38 +1,36 @@
-```txt
 ROADMAP – Indoor Routing System (Summer 2025)
 
 PHASE A: Data Collection & QR System
-[ ] Build simple mobile prototype (Expo or native) to read QR & send sensors
-[ ] Generate and print QR codes for rooms 201–225
-[ ] Deploy local Flask endpoint `/collect_sensor_data`
+[x] Build a simple mobile prototype (Expo or native) to read QR & send sensors
+[x] Generate and print QR codes for rooms 201–225
+[x] Deploy local Flask endpoint `/collect_sensor_data`
 
-PHASE B: Routing via PostGIS
-[ ] Build `/route?from=X&to=Y` endpoint using pgRouting (Dijkstra)
-[ ] Export paths as GeoJSON for map overlays
+PHASE B: Routing via PostGIS (On Hold)
+[ ] PgRouting and Dijkstra are on hold for now
 
-PHASE C: Offline PDR & Fingerprinting
-[ ] Test PDR accuracy on existing recordings
-[ ] Generate room baselines from Wi-Fi stats
-[ ] Develop fingerprinting + confidence score
+PHASE C: Offline PDR & Fingerprinting (On Hold)
+[ ] Fingerprinting and Wi-Fi baselines are on hold
+[ ] Simulations to be done on PDR behavior combined with QR for validation
 
 PHASE D: Fusion & Recalibration
-[ ] Implement basic Kalman Filter (manual or FilterPy)
-[ ] Automatically recalibrate via Wi‑Fi when deviation >2m
-[ ] Improve sensor fusion logic in `fusion.py`
+[x] Basic Kalman Filter implementation
+[x] Automatic recalibration via Wi-Fi (if deviation >2m)
+[x] Improved sensor fusion logic in `fusion.py`
 
-PHASE E: Web UI & Map Display
-[ ] Show current position on Leaflet map
-[ ] Display suggested route in web UI
-[ ] Auto-update position on the fly (polling or socket)
+PHASE E: Web UI & Map Display (Upcoming)
+[x] Start front-end work:
+[ ]	- Show position on Leaflet
+[ ]	- Display QR
+[ ]	- Simulate and visualize results
 
 PHASE F: Deployment
 [ ] Dockerize backend
 [ ] Host on Railway/Render or internal UOC server
 
 PHASE G: Monitoring & UX
-[ ] Log sensor errors and fusion failures
-[ ] Add email or Slack alerts for outages
-[ ] Write setup, user, and developer documentation
-[ ] Create a user-friendly README with setup instructions
-[ ] Add comments and docstrings to all scripts
-[ ] Ensure code is modular and reusable for future projects
+[x] Log sensor errors and fusion failures
+[ ] Email/Slack alerts for outages
+[ ] Setup, user, and developer documentation
+[x] User-friendly README
+[ ] Comments and docstrings
+[ ] Modularity and reusability

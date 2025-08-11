@@ -216,7 +216,7 @@ def get_latest_positions() -> Tuple[Optional[Tuple[float, float, int]], Optional
                 logger.warning(f"QR coordinates invalid: {qr_geo}")
                 qr_pos = None
             else:
-                x, y = ll_to_local(*qr_geo)
+                x, y = qr_geo
                 qr_pos = normalize_position_to_3tuple((x, y))
     except Exception as e:
         logger.warning(f"QR position failed: {e}")
