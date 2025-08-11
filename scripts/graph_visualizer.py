@@ -1,6 +1,6 @@
 """
-Visualiseur de graphe de couloirs.
-Ce module permet de visualiser le graphe construit et les chemins trouvés.
+Graph visualizer for corridor maps.
+This module allows visualizing the constructed graph and the found paths.
 """
 
 import json
@@ -11,13 +11,13 @@ import sys
 from pathlib import Path
 
 class GraphVisualizer:
-    """Classe pour visualiser les graphes de couloirs."""
+    """Class for visualizing corridor graphs."""
     def __init__(self, graph_data_path: str, background_image: str = None):
         """
-        Initialise le visualiseur avec les données du graphe.
+        Initialize the visualizer with graph data.
         Args:
-            graph_data_path: Chemin vers le fichier JSON du graphe
-            background_image: Chemin optionnel vers l'image de fond (plan d'étage)
+            graph_data_path: Path to the graph JSON file
+            background_image: Optional path to the background image (floor plan)
         """
         with open(graph_data_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
@@ -27,13 +27,13 @@ class GraphVisualizer:
         self.corridor_structure = data['corridor_structure']
         self.background_image = background_image
 
-        # Créer le graphe NetworkX et positions
+        # Create the NetworkX graph and positions
         self.nx_graph = nx.Graph()
         self.pos = {}
         self._build_networkx_graph()
 
     def _build_networkx_graph(self):
-        """Construit le graphe NetworkX pour la visualisation."""
+        """Build the NetworkX graph for visualization."""
         for room, (x, y) in self.room_positions.items():
             self.nx_graph.add_node(room, node_type='room')
             self.pos[room] = (x, y)
@@ -53,11 +53,11 @@ class GraphVisualizer:
                          save_path: str = None,
                          show_bg=True):
         """
-        Visualise le graphe complet.
+        Visualize the complete graph.
         """
         plt.figure(figsize=figsize, dpi=300)
 
-        # Fond de plan si fourni
+        # Background image if provided
         if show_bg and self.background_image and Path(self.background_image).exists():
             img = plt.imread(self.background_image)
             xs = [x for x, y in self.pos.values()]
@@ -89,7 +89,7 @@ class GraphVisualizer:
         if save_path:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, bbox_inches='tight')
-            print(f"✅ Graphe complet enregistré dans {save_path}")
+            print(f"✅ Complete graph saved to {save_path}")
         plt.close()
 
     def visualize_path(self,
@@ -99,9 +99,9 @@ class GraphVisualizer:
                        node_size_corridor=250,
                        font_size=12,
                        save_path: str = None):
-        """Visualise un chemin spécifique sur le graphe."""
+        """Visualize a specific path on the graph."""
         if not path:
-            print("Chemin vide, impossible de visualiser")
+            print("Empty path, unable to visualize")
             return
 
         plt.figure(figsize=figsize, dpi=300)
@@ -137,29 +137,29 @@ class GraphVisualizer:
         if save_path:
             Path(save_path).parent.mkdir(parents=True, exist_ok=True)
             plt.savefig(save_path, bbox_inches='tight')
-            print(f"✅ Chemin enregistré dans {save_path}")
+            print(f"✅ Path saved to {save_path}")
         plt.close()
 
     def show_corridor_structure(self):
-        print("=== Structure des couloirs ===")
+        print("=== Corridor Structure ===")
         for name, info in self.corridor_structure.items():
             print(f"\n{name}: ")
-            print(f"  Niveau Y: {info['y_level']}")
-            print(f"  Nombre de salles: {len(info['rooms'])}")
-            print(f"  Salles: {[r[0] for r in info['rooms']]}" )
-            print(f"  Points de couloir: {len(info['points'])}")
+            print(f"  Y Level: {info['y_level']}")
+            print(f"  Number of Rooms: {len(info['rooms'])}")
+            print(f"  Rooms: {[r[0] for r in info['rooms']]}" )
+            print(f"  Corridor Points: {len(info['points'])}")
 
     def analyze_connectivity(self):
-        print("=== Analyse de connectivité ===")
-        print(f"Nombre total de nœuds: {self.nx_graph.number_of_nodes()}")
-        print(f"Nombre total d'arêtes: {self.nx_graph.number_of_edges()}")
+        print("=== Connectivity Analysis ===")
+        print(f"Total number of nodes: {self.nx_graph.number_of_nodes()}")
+        print(f"Total number of edges: {self.nx_graph.number_of_edges()}")
         comps = list(nx.connected_components(self.nx_graph))
-        print(f"Nombre de composantes connexes: {len(comps)}")
-        print("✅ Graphe entièrement connecté" if len(comps) == 1 else "⚠️ Graphe non connecté")
+        print(f"Number of connected components: {len(comps)}")
+        print("✅ Fully connected graph" if len(comps) == 1 else "⚠️ Disconnected graph")
 
     def find_isolated_nodes(self) -> List[str]:
         isolated = list(nx.isolates(self.nx_graph))
-        print(f"✅ Aucun nœud isolé" if not isolated else f"⚠️ Nœuds isolés: {isolated}")
+        print(f"✅ No isolated nodes" if not isolated else f"⚠️ Isolated nodes: {isolated}")
         return isolated
 
 if __name__ == "__main__":
@@ -173,10 +173,10 @@ if __name__ == "__main__":
     PATH_IMG  = DATA_DIR / 'graph/path_2-10_to_2-04.png'
 
     if not JSON_PATH.exists():
-        print("❌ Fichier introuvable:", JSON_PATH)
+        print("❌ File not found:", JSON_PATH)
         sys.exit(1)
 
-    print(f"📁 Utilisation du JSON : {JSON_PATH}")
+    print(f"📁 Using JSON file: {JSON_PATH}")
 
     try:
         viz = GraphVisualizer(str(JSON_PATH), background_image=str(BACK_IMG))
@@ -190,14 +190,14 @@ if __name__ == "__main__":
         pathfinder = load_pathfinder_from_json(str(JSON_PATH))
         result = pathfinder.find_shortest_path('2-10', '2-04')
         if result:
-            print(f"\nChemin 2-10 → 2-04 : {result['distance']:.2f} m")
-            print("Détail :", " → ".join(result['path']))
+            print(f"\nPath 2-10 → 2-04 : {result['distance']:.2f} m")
+            print("Details :", " → ".join(result['path']))
             viz.visualize_path(result['path'], save_path=str(PATH_IMG))
         else:
-            print("❌ Aucun chemin trouvé entre 2-10 et 2-04")
+            print("❌ No path found between 2-10 and 2-04")
 
     except ModuleNotFoundError as mnf:
         print("ImportError:", mnf)
     except Exception as e:
-        print("Erreur inattendue:", e)
+        print("Unexpected error:", e)
         import traceback; traceback.print_exc()

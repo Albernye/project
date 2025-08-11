@@ -42,17 +42,17 @@ def euclidean_distance(lon1, lat1, lon2, lat2):
     return distance
 
 def fingerprint(knntrainfile, FPfile, kP, kZ, R):
-    # Lecture unique du fichier FP
+    # Unique reading of the fingerprint and training files
     fps = pd.read_csv(FPfile, delimiter=';')
     rssi_cols = [c for c in fps.columns if c.startswith('rssi')]
     
     train = pd.read_csv(knntrainfile, delimiter=';')
     train_rssi_cols = [c for c in train.columns if c.startswith('rssi')]
     
-    # Prendre l'intersection des colonnes RSSI
+    # Take the common columns between the two files
     common_cols = list(set(rssi_cols) & set(train_rssi_cols))
-    common_cols.sort()  # Assurer l'ordre cohérent
-    
+    common_cols.sort()  # Ensure consistent order
+
     fps = fps[common_cols].values
     knnP = KNeighborsRegressor(n_neighbors=kP)
     knnZ = KNeighborsRegressor(n_neighbors=kZ)
@@ -88,7 +88,7 @@ def fingerprint(knntrainfile, FPfile, kP, kZ, R):
     plt.show()
     return pred
 
-# === NOUVELLES FONCTIONS AJOUTÉES ===
+# === NEW FUNCTIONS ADDED ===
 
 def set_origin(lon0: float, lat0: float):
     """
@@ -113,8 +113,14 @@ def ll_to_local(lon: float, lat: float) -> tuple:
         tuple: (x, y) coordinates in meters relative to origin
     """
     R = 6371000  # Earth radius (m)
-    x = (lon - ORIGIN_LON) * math.cos(math.radians(ORIGIN_LAT)) * R
-    y = (lat - ORIGIN_LAT) * R
+    # dlon and dlat in radians
+    dlon = math.radians(lon  - ORIGIN_LON)
+    dlat = math.radians(lat  - ORIGIN_LAT)
+
+    # Equirectangular projection
+    x = dlon * math.cos(math.radians(ORIGIN_LAT)) * R
+    y = dlat * R
+
     return x, y
 
 def fingerprint_with_local_coords(knntrainfile, FPfile, kP, kZ, R):
@@ -168,35 +174,35 @@ def get_last_position(knntrainfile, FPfile, kP, kZ, R):
     
     return x, y, floor
 
-# === EXEMPLE D'UTILISATION ===
-if __name__ == "__main__":
-    # Définir l'origine des coordonnées (coordonnées du centre du bâtiment par exemple)
-    set_origin(11.110965, 49.461147)  # Près de l'ascenseur 1
-    
-    # Exemple d'utilisation (remplacer par vos vrais fichiers)
+# === EXAMPLE USAGE ===
+#if __name__ == "__main__":
+    # Set the origin of the coordinates (coordinates of the center of the building for example)
+    set_origin(11.110965, 49.461147)  # Near elevator 1
+
+    # Example usage (replace with your actual files)
     train_file = "knn_train.csv"
     fp_file = "fingerprint.csv"
     
     try:
-        # Méthode 1: Utiliser la fonction originale de Louis Royet
-        print("=== Fonction originale de Louis Royet ===")
+        # Method 1: Use the original function from Louis Royet
+        print("=== Original Function from Louis Royet ===")
         pred_original = fingerprint(train_file, fp_file, kP=3, kZ=3, R=10.0)
-        print(f"Dernière position (lon, lat, floor): {pred_original[-1]}")
-        
-        # Méthode 2: Obtenir seulement la dernière position en coordonnées locales
-        print("\n=== Dernière position en coordonnées locales ===")
+        print(f"Last position (lon, lat, floor): {pred_original[-1]}")
+
+        # Method 2: Get only the last position in local coordinates
+        print("\n=== Last Position in Local Coordinates ===")
         x, y, floor = get_last_position(train_file, fp_file, kP=3, kZ=3, R=10.0)
-        print(f"Dernière position (x, y, floor): ({x:.2f}m, {y:.2f}m, {floor})")
-        
-        # Méthode 3: Obtenir toute la trajectoire en coordonnées locales
-        print("\n=== Trajectoire complète en coordonnées locales ===")
+        print(f"Last position (x, y, floor): ({x:.2f}m, {y:.2f}m, {floor})")
+
+        # MMethod 3: Get the entire trajectory in local coordinates
+        print("\n=== Complete Trajectory in Local Coordinates ===")
         trajectory_local = fingerprint_with_local_coords(train_file, fp_file, kP=3, kZ=3, R=10.0)
-        print(f"Nombre de points: {len(trajectory_local)}")
-        print(f"Première position (x, y, floor): ({trajectory_local[0,0]:.2f}m, {trajectory_local[0,1]:.2f}m, {int(trajectory_local[0,2])})")
-        print(f"Dernière position (x, y, floor): ({trajectory_local[-1,0]:.2f}m, {trajectory_local[-1,1]:.2f}m, {int(trajectory_local[-1,2])})")
-        
+        print(f"Number of points: {len(trajectory_local)}")
+        print(f"First position (x, y, floor): ({trajectory_local[0,0]:.2f}m, {trajectory_local[0,1]:.2f}m, {int(trajectory_local[0,2])})")
+        print(f"Last position (x, y, floor): ({trajectory_local[-1,0]:.2f}m, {trajectory_local[-1,1]:.2f}m, {int(trajectory_local[-1,2])})")
+
     except FileNotFoundError:
-        print("Veuillez fournir les bons chemins vers vos fichiers de données.")
-        print("Exemple d'utilisation:")
+        print("File not found.")
+        print("Example usage:")
         print("set_origin(11.110965, 49.461147)")
         print("x, y, floor = get_last_position('train.csv', 'fp.csv', 3, 3, 10.0)")

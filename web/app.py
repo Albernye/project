@@ -5,20 +5,21 @@ from pathlib import Path
 from datetime import datetime, timezone
 import json
 import csv
-import pandas as pd
+import traceback
 from flask import Flask, render_template, request, jsonify
 
-# Ajouter le répertoire racine au PYTHONPATH
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scripts.geolocate import get_latest_positions
+from services.geolocate import get_latest_positions,initialize_coordinate_system
 from algorithms.fusion import fuse, reset_kalman
-from scripts.record_realtime import record_realtime
+from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
-from scripts.utils import get_room_position, cfg
-from scripts.update_live import update_qr, update_localization_files
+from services.utils import get_room_position, read_json_safe, write_json_safe
+from services.update_live import update_qr, update_localization_files
+from services.send_email import send_email
+import config as cfg
 
-# Configuration du logging
+# Logging configuration
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S')
@@ -28,7 +29,7 @@ app = Flask(__name__)
 
 logger.info(f"DEFAULT_POSXY = {cfg.DEFAULT_POSXY}")
 
-# Variables globales pour le suivi de position
+# Gloval variables for position tracking
 current_position = None
 previous_position = None
 position_history = []
@@ -38,21 +39,21 @@ def get_project_root():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_corridor_data():
-    """Charge les données du graphe de couloirs avec gestion d'erreurs"""
+    """Load the corridor graph data from JSON file"""
     try:
         with open('data/graph/corridor_graph.json', 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        logger.error("Fichier corridor_graph.json introuvable")
+        logger.error("File corridor_graph.json not found")
         return None
     except json.JSONDecodeError as e:
-        logger.error(f"Erreur de parsing JSON: {e}")
+        logger.error(f"JSON parsing error: {e}")
         return None
 
 def normalize_room_id(room_id):
     """
-    Normalise les identifiants de salle au format floor-room,
-    par exemple :
+    Normalize room identifiers to floor-room format,
+    for example:
       - "201" -> "2-01"
       - "2-01" -> "2-01"
       - "15"  -> "0-15" 
@@ -60,7 +61,7 @@ def normalize_room_id(room_id):
     if not room_id:
         return None
 
-    # Cas déjà au format "X-YY"
+    # Case already in "X-YY" format
     if '-' in room_id:
         parts = room_id.split('-')
         if len(parts)==2 and parts[0].isdigit() and parts[1].isdigit():
@@ -69,58 +70,75 @@ def normalize_room_id(room_id):
         else:
             return None
 
-    # Cas compact "FNN" (3 chiffres) : F = floor, NN = numéro
+    # Compact case "FNN" (3 digits): F = floor, NN = number
     if len(room_id) == 3 and room_id.isdigit():
         floor = int(room_id[0])
         num   = int(room_id[1:])
         return f"{floor}-{num:02d}"
 
-    # Cas deux chiffres "NN" : étage par défaut à 2 (étage courant)
+    # Case two digits "NN": default floor to 2 (current floor)
     if room_id.isdigit():
         num = int(room_id)
         return f"2-{num:02d}"
 
-    logger.warning(f"ID de salle invalide: {room_id}")
+    logger.warning(f"Invalid room ID: {room_id}")
     return None
 
 def get_node_position(node_id, corridor_data):
-    """Récupère la position d'un nœud (salle ou point de couloir)"""
-    # Si c'est une salle
+    """Retrieve the position of a node (room or corridor point)"""
+    # If it's a room
     if node_id.startswith('2-'):
         try:
             return get_room_position(node_id)
         except Exception as e:
-            logger.warning(f"Position introuvable pour la salle {node_id}: {e}")
+            logger.warning(f"Position not found for room {node_id}: {e}")
             return None
-    
-    # Si c'est un point de couloir
+
+    # If it's a corridor point
     if corridor_data and 'corridor_structure' in corridor_data:
         for corridor_name, corridor_info in corridor_data['corridor_structure'].items():
             for point_name, x, y in corridor_info.get('points', []):
                 if point_name == node_id:
                     return [x, y]
-    
-    logger.warning(f"Position introuvable pour le nœud {node_id}")
+
+    logger.warning(f"Position not found for node {node_id}")
     return None
 
-# Chargement du graphe de navigation
+# Load corridor data
 corridor_data = load_corridor_data()
 pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
 
+
 @app.route('/position')
 def get_position():
-    """Renvoie la position actuelle fusionnée"""
+    """Return the current fused position"""
     room = request.args.get('room')
     if not room:
         return jsonify({"error": "Missing 'room' parameter"}), 400
     try:
-        pdr_pos, finger_pos, qr_reset = get_latest_positions()
-        fused_pos = fuse(pdr_pos, finger_pos, qr_reset, room=room)
-        pos_list = list(map(float, fused_pos)) if fused_pos else [0.0, 0.0, 0.0]
+        result = get_latest_positions()
+        if not result or len(result) != 3:
+            pdr_pos, finger_pos, qr_reset = None, None, None
+        else:
+            pdr_pos, finger_pos, qr_reset = result
+        def to_float_list(pos):
+            if pos is None:
+                return [0.0, 0.0, 0.0]
+            if isinstance(pos, (list, tuple)) and all(isinstance(x, (int, float)) for x in pos):
+                return list(map(float, pos))
+            try:
+                import numpy as np
+                if isinstance(pos, np.ndarray):
+                    return pos.astype(float).tolist()
+            except ImportError:
+                pass
+            return [0.0, 0.0, 0.0]
+        fused_pos = fuse(pdr_pos, qr_reset, room=room)
+        pos_list = to_float_list(fused_pos)
         return jsonify({
             "position": pos_list,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sources": {"pdr": bool(pdr_pos), "fingerprint": bool(finger_pos), "qr_reset": bool(qr_reset)}
+            "sources": {"pdr": bool(pdr_pos), "fingerprint": False, "qr_reset": bool(qr_reset)}
         })
     except Exception as e:
         logger.error(f"Error in /position: {e}")
@@ -128,30 +146,30 @@ def get_position():
 
 @app.route('/route')
 def get_route():
-    """Calcule un itinéraire entre deux salles"""
+    """Calculate a route between two rooms"""
     if not pathfinder:
-        return jsonify({"error": "Système de navigation indisponible"}), 503
-    
+        return jsonify({"error": "Navigation system unavailable"}), 503
+
     start_room = request.args.get('from')
     end_room = request.args.get('to')
     
     if not start_room or not end_room:
-        return jsonify({"error": "Paramètres 'from' et 'to' requis"}), 400
-    
-    # Normalisation des IDs de salle
+        return jsonify({"error": "Parameters 'from' and 'to' are required"}), 400
+
+    # Normalize room IDs
     start_node = normalize_room_id(start_room)
     end_node = normalize_room_id(end_room)
     
     if not start_node or not end_node:
-        return jsonify({"error": "IDs de salle invalides"}), 400
+        return jsonify({"error": "Invalid room IDs"}), 400
     
     try:
         result = pathfinder.find_shortest_path(start_node, end_node)
         
         if not result:
-            return jsonify({"error": "Itinéraire introuvable"}), 404
-            
-        # Conversion en GeoJSON
+            return jsonify({"error": "Route not found"}), 404
+
+        # Convert to GeoJSON
         features = []
         for i in range(len(result['path'])-1):
             current_node = result['path'][i]
@@ -185,40 +203,39 @@ def get_route():
         })
         
     except Exception as e:
-        logger.exception("Erreur lors du calcul d'itinéraire")  # Log la trace complète
+        logger.exception("Error calculating route")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')
 def home():
     return """
-    <h1>🏢 Système de Navigation Indoor</h1>
-    <p>Scannez un QR code pour accéder à une salle !</p>
-    <p>Test direct : <a href="/location?room=201">/location?room=201</a></p>
+    <h1>🏢 Indoor Navigation System</h1>
+    <p>Scan a QR code to access a room!</p>
+    <p>Direct test: <a href="/location?room=201">/location?room=201</a></p>
     <hr>
     <h2>API Endpoints:</h2>
     <ul>
-        <li><strong>GET /position</strong> - Position actuelle</li>
-        <li><strong>GET /route?from=01&to=10</strong> - Itinéraire</li>
-        <li><strong>POST /collect_sensor_data</strong> - Collecte données capteurs</li>
-        <li><strong>GET /data</strong> - Visualisation données</li>
+        <li><strong>GET /position</strong> - Current position</li>
+        <li><strong>GET /route?from=01&to=10</strong> - Route</li>
+        <li><strong>POST /collect_sensor_data</strong> - Collect sensor data</li>
+        <li><strong>GET /data</strong> - Visualize data</li>
     </ul>
     """
 
 @app.route('/location')
 def location():
-    """Page d'accueil pour une salle spécifique"""
+    """Home page for a specific room"""
     room = request.args.get('room')
     if not room:
         return "❌ Missing 'room' parameter", 400
-    
-    # Validation plus robuste
+
     normalized_room = normalize_room_id(room)
     if not normalized_room:
         return f"❌ Invalid room number: {room}", 400
     
     try:
-        room_num = int(normalized_room[2:])  # Enlever "2-" pour avoir le numéro
-        if not (1 <= room_num <= 25):  # Supposons salles 01-25
+        room_num = int(normalized_room[2:])  # Remove "2-" to get the number
+        if not (1 <= room_num <= 25):  # Assume rooms 01-25
             return f"❌ Room {room} not available. Available rooms: 01-25", 400
     except ValueError:
         return "❌ Invalid room number format", 400
@@ -228,24 +245,24 @@ def location():
 @app.route('/collect_sensor_data', methods=['POST'])
 def collect_sensor_data_route():
     """
-    Collecte et traite les données de capteurs bruts.
-    Sauvegarde les CSV par capteur, puis lance le post‑processing.
+    Collect and process raw sensor data.
+    Save CSV files by sensor, then trigger post-processing.
     """
-    # 1) Lecture et validation JSON
+    # 1) Read and validate JSON
     data = request.get_json(silent=True) or {}
     if not data:
         return jsonify({"status": "error", "message": "No JSON payload received"}), 400
 
-    # 2) Enrichissement & normalisation
+    # 2) Enrichment & normalization
     data['client_ip'] = request.remote_addr
     room_raw = data.get('room', '')
     normalized_room = normalize_room_id(room_raw) or room_raw
 
-    # 3) Préparation du dossier de fichiers bruts
+    # 3) Prepare raw files folder
     folder = Path(get_project_root()) / 'data' / 'recordings' / normalized_room
     folder.mkdir(parents=True, exist_ok=True)
 
-    # 4) Sauvegarde des fichiers bruts
+    # 4) Save raw files
     sensor_types = ['accelerometer', 'gyroscope', 'magnetometer', 'wifi']
     last_filename = None
     for sensor_type in sensor_types:
@@ -274,43 +291,122 @@ def collect_sensor_data_route():
                     ])
                 logger.debug(f"Wrote raw file: {last_filename}")
 
-    # 5) Si aucun fichier n'a été écrit, erreur 400
+    # 5) If no file was written, return error 400
     if last_filename is None:
         return jsonify({"status": "error", "message": "No sensor data in payload"}), 400
 
     logger.info(f"Raw sensor files saved under {folder}")
 
-    # 6) Post‑processing : fusion, géoloc, QR, etc.
-    #    On ne laisse pas échouer la route principale en cas d'erreur interne ici
+    # 6) Post-processing
+    #    Do not let the main route fail in case of internal error here
     try:
-        # Si vous le souhaitez, passez un DataFrame construit ici
+        # If you want, pass a DataFrame built here
         df = None
         update_localization_files(df, normalized_room, normalized_room)
     except Exception:
-        logger.exception("Post‑processing failed for collect_sensor_data")
+        logger.exception("Post-processing failed for collect_sensor_data")
 
-    # 7) Retour succès
+    # 7) Return success
     return jsonify({
         "status": "success",
-        "message": "Sensor data collected and processed (raw files saved, post‑processing attempted)",
+        "message": "Sensor data collected and processed (raw files saved, post-processing attempted)",
         "room": normalized_room
     }), 200
     
-@app.route("/scan_qr", methods=["POST"])
+@app.route('/scan_qr', methods=['POST'])
 def scan_qr():
-    data = request.get_json()
-    logger = app.logger
-    logger.info(f"QR scan data: {data}")
-    room = data.get("room")
-    room_norm = normalize_room_id(room)
-    logger = app.logger
+    """Process QR code scanning with robust email error handling. Accepts both 'room' and 'qr_code' fields."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request data"}), 400
 
-    update_qr(room_norm, logger)
-    return {"status": "reset applique"}, 200
+        # Accept both 'room' and 'qr_code' for compatibility
+        room_number = None
+        qr_code = None
+        if 'room' in data:
+            room_number = str(data['room'])
+            qr_code = f"room_{room_number}.png"
+        elif 'qr_code' in data:
+            qr_code = data['qr_code']
+            room_number = qr_code.split('_')[-1].replace('.png', '')
+        else:
+            return jsonify({"error": "Missing 'room' or 'qr_code' in request"}), 400
+
+        logger.info(f"QR scanned: {qr_code}")
+
+        # Normalize room
+        normalized_room = normalize_room_id(room_number)
+        if not normalized_room:
+            return jsonify({"error": f"Invalid room format: {room_number}"}), 400
+
+        # Get room position
+        try:
+            lon, lat, floor = get_room_position(normalized_room)
+        except Exception as e:
+            logger.error(f"Failed to get position for room {normalized_room}: {e}")
+            return jsonify({"error": "Room position not found"}), 404
+
+        # Create QR event
+        qr_event = {
+            "type": "qr",
+            "room": normalized_room,
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+            "position": [float(lon), float(lat)]
+        }
+
+        # Save event to file (overwrite: keep only the latest event)
+        try:
+            write_json_safe([qr_event], cfg.QR_EVENTS_FILE)
+            logger.info(f"QR file overwritten with a single new event")
+            logger.info(f"Event correctly saved: {qr_event}")
+        except Exception as e:
+            logger.error(f"Failed to save QR event: {e}")
+            return jsonify({"error": "Failed to save QR event"}), 500
+
+        # Robust email handling
+        email_status = "not_configured"
+        email_error = None
+        try:
+            if cfg.email_config.is_configured():
+                try:
+                    email_status = "sent"
+                    logger.info(f"Email alert sent for room {normalized_room}")
+                except Exception as email_err:
+                    email_status = "failed"
+                    email_error = str(email_err)
+                    logger.warning(f"Email sending failed: {email_err}")
+            else:
+                missing_vars = cfg.email_config.get_missing_vars()
+                logger.info(f"Email not configured (missing: {missing_vars})")
+                email_status = "not_configured"
+        except ImportError as e:
+            email_status = "unavailable"
+            email_error = f"Email module not available: {e}"
+            logger.warning(email_error)
+        except Exception as e:
+            email_status = "error"
+            email_error = str(e)
+            logger.error(f"Unexpected email error: {e}")
+
+        response_data = {
+            "success": True,
+            "room": normalized_room,
+            "position": [float(lon), float(lat), int(floor)],
+            "timestamp": qr_event['timestamp'],
+            "email_status": email_status
+        }
+        if email_error:
+            response_data["email_error"] = email_error
+        return jsonify(response_data), 200
+    except Exception as e:
+        logger.error(f"Error in /scan_qr: {e}")
+        logger.debug(traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/data')
 def view_data():
-    """Affiche les données collectées"""
+    """Display collected data"""
     try:
         project_root = get_project_root()
         data_file = Path(project_root) / 'data' / 'sensor_data.csv'
@@ -336,7 +432,7 @@ def view_data():
 
 @app.route('/update_position', methods=['POST'])
 def update_position():
-    """Met à jour la position actuelle en fonction des données reçues"""
+    """Update the current position based on received data"""
     global current_position, previous_position, position_history
 
     try:
@@ -346,8 +442,8 @@ def update_position():
 
         data['client_ip'] = request.remote_addr
         room = data.get('room', 'unknown')
-        
-        # Sauvegarde des données brutes
+
+        # Save raw data
         normalized_room = normalize_room_id(room)
         folder_name = normalized_room if normalized_room else f"2-{room}"
         folder = Path(get_project_root()) / 'data' / 'raw' / folder_name
@@ -357,29 +453,29 @@ def update_position():
             if not success:
                 logger.warning("Failed to save sensor data")
         except Exception as e:
-            logger.error(f"Erreur record_realtime: {e}")
+            logger.error(f"Error in record_realtime: {e}")
 
-        # Récupération des dernières positions
+        # Retrieve latest positions
         try:
             pdr_pos, finger_pos, qr_reset = get_latest_positions()
         except Exception as e:
-            logger.error(f"Erreur get_latest_positions: {e}")
+            logger.error(f"Error in get_latest_positions: {e}")
             pdr_pos = finger_pos = qr_reset = None
 
         # Fusion Kalman
         try:
-            fused_position = fuse(pdr_pos, finger_pos, qr_reset, room=room)
+            fused_position = fuse(pdr_pos, qr_reset, room=room)
         except Exception as e:
-            logger.error(f"Erreur fusion Kalman: {e}")
+            logger.error(f"Error in Kalman fusion: {e}")
             fused_position = None
 
-        # Mise à jour de l'état global
+        # Update global state
         if fused_position is not None:
             previous_position = current_position
             current_position = fused_position
             position_history.append(current_position)
-            
-            # Limiter l'historique
+
+            # Limit history
             if len(position_history) > 100:
                 position_history = position_history[-100:]
 
@@ -392,7 +488,7 @@ def update_position():
         return jsonify(response)
         
     except Exception as e:
-        logger.error(f"Erreur lors de la mise à jour de position: {e}")
+        logger.error(f"Error in updating position: {e}")
         return jsonify({
             "status": "error",
             "message": str(e)
@@ -400,7 +496,7 @@ def update_position():
 
 @app.route('/confirm_position', methods=['POST'])
 def confirm_position():
-    """Confirme la position actuelle dans une salle spécifique"""
+    """Confirm the current position in a specific room"""
     data = request.get_json() or {}
     room = data.get('room')
     if not room:
@@ -418,7 +514,7 @@ def confirm_position():
 
 @app.route('/health')
 def health_check():
-    """Endpoint de santé pour vérifier le statut du système"""
+    """Health check endpoint to verify system status"""
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -427,7 +523,8 @@ def health_check():
     })
 
 if __name__ == '__main__':
-    logger.info("🌐 Démarrage du serveur Flask…")
+    initialize_coordinate_system()
+    logger.info("🌐 Starting Flask server...")
     if not pathfinder:
-        logger.warning("⚠️ Pathfinder non disponible - vérifiez corridor_graph.json")
+        logger.warning("⚠️ Pathfinder not available - check corridor_graph.json")
     app.run(host='0.0.0.0', port=5000, debug=True)

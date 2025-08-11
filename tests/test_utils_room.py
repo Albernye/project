@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
-from scripts.utils import load_room_positions, get_room_position
+from services.utils import load_room_positions, get_room_position
 
 @pytest.fixture
 def room_csv(tmp_path):
@@ -14,7 +14,7 @@ def room_csv(tmp_path):
 
 @pytest.fixture
 def patch_room_cache(monkeypatch):
-    import scripts.utils as utils_mod
+    import services.utils as utils_mod
     utils_mod._room_positions_cache = None
     monkeypatch.setattr(utils_mod, "load_room_positions", lambda path: {"2-201": (2.0, 41.4)})
     return utils_mod
@@ -26,4 +26,4 @@ def test_load_room_positions(room_csv):
 
 def test_get_room_position(patch_room_cache):
     pos = patch_room_cache.get_room_position("2-201")
-    assert pos == (2.0, 41.4)
+    assert pos == (2.0, 41.4, 2)

@@ -1,11 +1,12 @@
 import sys
 from pathlib import Path
-# Ajoute le dossier racine du projet au PYTHONPATH
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 import pandas as pd
-from scripts.record_realtime import record_realtime
+import config as cfg
+from services.record_realtime import record_realtime
 
 @pytest.fixture
 def dummy_folder(tmp_path):
@@ -22,7 +23,6 @@ def dummy_folder(tmp_path):
 
 @pytest.fixture
 def patch_recordings_dir(monkeypatch, tmp_path):
-    from scripts.utils import cfg
     monkeypatch.setattr(cfg, "RECORDINGS_DIR", tmp_path / "recordings")
     return cfg
 
