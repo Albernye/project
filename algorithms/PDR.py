@@ -13,12 +13,41 @@ def step_detection_accelerometer(magnitude, time, plot=True, fig_idx=1):
     time_exp = time[-1] - time[0]
     freq_Acc = np.ceil(num_samples / time_exp)  # samples/s or Hz
     
-    # Apply low-pass Butterworth filter
+    # Apply low-pass Butterworth filter with comprehensive safety checks
     order_filter = 4
     cutoff_freq = 2.0  # Hz
-    b, a = butter(order_filter, cutoff_freq / (freq_Acc / 2), btype='low')
-    Acc_mag_filt = filtfilt(b, a, magnitude)
+    Acc_mag_filt = magnitude.copy()  # Default to raw data
     
+    try:
+        # Validate time sequence
+        time_exp = time[-1] - time[0]
+        if time_exp <= 0 or len(time) < 2:
+            raise ValueError("Invalid time sequence")
+        
+        # Calculate and validate sampling frequency
+        freq_Acc = len(magnitude) / time_exp
+        if freq_Acc < 1.0 or freq_Acc > 1000:
+            raise ValueError(f"Invalid sampling frequency: {freq_Acc:.1f} Hz")
+        
+        # Calculate and validate normalized cutoff frequency
+        nyquist = 0.5 * freq_Acc
+        normalized_cutoff = cutoff_freq / nyquist
+        if not (0 < normalized_cutoff < 1.0):
+            raise ValueError(f"Cutoff {normalized_cutoff:.2f} beyond valid range")
+        
+        # Design filter
+        b, a = butter(order_filter, normalized_cutoff, btype='low')
+        padlen = 3 * (max(len(b), len(a)) - 1)
+        
+        # Validate input length
+        if len(magnitude) > padlen + 10:  # Extra safety margin
+            Acc_mag_filt = filtfilt(b, a, magnitude)
+        else:
+            print(f"Using raw data (length {len(magnitude)} ≤ {padlen+10})")
+            
+    except Exception as e:
+        print(f"PDR filtering disabled: {str(e)}")
+
     # Detect steps
     threshold_acc = 0.4  # Threshold of 0.4 m/s^2
     threshold_acc_discard = 2.0  # Threshold above which indicates excessive movement
@@ -95,9 +124,37 @@ def weiberg_stride_length_heading_position(acc, gyr, time, step_event, stance_ph
 
     # Step 1: Magnitude
     m_acc = np.linalg.norm(acc, axis=1)
-    # Step 2: Low-pass
-    b, a = butter(4, 3 / (0.5 * freq_acc), btype='low')
-    m_acc = filtfilt(b, a, m_acc)
+    # Step 2: Low-pass with comprehensive safety checks
+    try:
+        # Validate time sequence
+        time_exp = time[-1] - time[0]
+        if time_exp <= 0 or len(time) < 2:
+            raise ValueError("Invalid time sequence")
+        
+        # Calculate and validate sampling frequency
+        freq_acc = len(m_acc) / time_exp
+        if freq_acc < 1.0 or freq_acc > 1000:
+            raise ValueError(f"Invalid sampling frequency: {freq_acc:.1f} Hz")
+        
+        # Calculate and validate normalized cutoff frequency
+        nyquist = 0.5 * freq_acc
+        normalized_cutoff = 3 / (0.5 * freq_acc)
+        if not (0 < normalized_cutoff < 1.0):
+            raise ValueError(f"Cutoff {normalized_cutoff:.2f} beyond valid range")
+        
+        # Design filter
+        b, a = butter(4, normalized_cutoff, btype='low')
+        padlen = 3 * (max(len(b), len(a)) - 1)
+        
+        # Validate input length with safety margin
+        if len(m_acc) > padlen + 10:  # Extra 10 sample buffer
+            m_acc = filtfilt(b, a, m_acc)
+        else:
+            print(f"Using raw stride data (length {len(m_acc)} ≤ {padlen+10})")
+            
+    except Exception as e:
+        print(f"Stride filtering disabled: {str(e)}")
+        m_acc = np.asarray(m_acc)
 
     # Step 3: Stride lengths
     stride_lengths = []

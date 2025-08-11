@@ -30,7 +30,7 @@ DEFAULT_PORT: int = 5000
 DEFAULT_DEBUG: bool = True
 
 DEFAULT_FLOOR: int = 2
-DEFAULT_POSXY: tuple[float, float] = (2.194291, 41.406351)
+DEFAULT_POSXY: tuple[float, float] = (2.175568, 41.406368)
 DEFAULT_RSSI: int = -80
 DEFAULT_AP_N: int = 5
 

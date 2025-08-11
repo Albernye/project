@@ -35,10 +35,10 @@ def test_process_room_data(tmp_path, dummy_raw_folder, monkeypatch):
 
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir(exist_ok=True)
-     
+
     folder = next(dummy_raw_folder.iterdir())
     room = "2-01"
-    
+
     result = process_room_data(folder, room, processed_dir)
     assert result is True
     # Vérifie que le fichier processed existe

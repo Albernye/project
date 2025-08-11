@@ -150,9 +150,10 @@ def add_room_geo(df: pd.DataFrame, room: str) -> pd.DataFrame:
     """Add long, lat, POSI_X, POSI_Y at the beginning of the DataFrame."""
     if df is None or df.empty:
         return df
-    lon, lat = get_room_position(room)
+    lon, lat, floor = get_room_position(room)
     df.insert(1, 'long', lon)
     df.insert(2, 'lat', lat)
-    df.insert(3, 'POSI_X', 0.0)
-    df.insert(4, 'POSI_Y', 0.0)
+    df.insert(3, 'floor', floor)  # Optionally add floor if needed; remove if not required
+    df.insert(4, 'POSI_X', 0.0)
+    df.insert(5, 'POSI_Y', 0.0)
     return df

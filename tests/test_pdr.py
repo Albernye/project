@@ -26,7 +26,7 @@ def simple_pdr_data(tmp_path):
     gyro_mod = np.sqrt(gyro_x**2 + gyro_y**2 + gyro_z**2)
 
     df = pd.DataFrame({
-        'timestamp': timestamps,
+        'time': timestamps,
         'ACCE_X': acce_x,
         'ACCE_Y': acce_y,
         'ACCE_Z': acce_z,
@@ -57,7 +57,7 @@ def stationary_pdr_data(tmp_path):
     gyro_mod = np.sqrt(gyro_x**2 + gyro_y**2 + gyro_z**2)
 
     df = pd.DataFrame({
-        'timestamp': timestamps,
+        'time': timestamps,
         'ACCE_X': acce_x,
         'ACCE_Y': acce_y,
         'ACCE_Z': acce_z,
@@ -68,7 +68,7 @@ def stationary_pdr_data(tmp_path):
         'GYRO_MOD': gyro_mod,
     })
     path = tmp_path / "stationary_pdr.csv"
-    df.to_csv(path, sep=';', index=False)
+    df.to_csv(path, sep=',', index=False)
     return str(path)
 
 @ pytest.mark.parametrize("csv_data", ["simple_pdr_data", "stationary_pdr_data"])
@@ -102,7 +102,7 @@ def test_pdr_various_lengths(tmp_path):
         timestamps = np.linspace(0, N/20, N)
         signal = 0.5 * np.sin(2 * np.pi * 1.5 * timestamps)
         df = pd.DataFrame({
-            'timestamp': timestamps,
+            'time': timestamps,
             'ACCE_X': signal,
             'ACCE_Y': 9.8 + signal,
             'ACCE_Z': np.zeros(N),

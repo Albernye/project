@@ -43,7 +43,7 @@ def normalize_room_id(room_id):
       - "2-01" -> "2-01"
       - "15"  -> "2-15" 
     """
-    if not room_id:
+    if not isinstance(room_id, str) or not room_id:
         return None
 
     # Case "F-XX" : already normalized
@@ -56,15 +56,16 @@ def normalize_room_id(room_id):
             return None
 
     # Case compact "FNN" (3 number digits)
-    if len(room_id) == 3 and room_id.isdigit():
-        floor = int(room_id[0])
-        num   = int(room_id[1:])
-        return f"{floor}-{num:02d}"
-
-    # Case 2 digits "NN" (2 number digits) - FIXED: default to floor 2
     if room_id.isdigit():
-        num = int(room_id)
-        return f"2-{num:02d}"
+        if len(room_id) == 3:
+            floor = int(room_id[0])
+            num   = int(room_id[1:])
+            return f"{floor}-{num:02d}"
+        elif len(room_id) == 2:
+            num = int(room_id)
+            return f"2-{num:02d}"
+        elif len(room_id) == 1 or len(room_id) > 3:
+            return None
 
     logger.warning(f"Room ID invalid: {room_id}")
     return None
@@ -110,10 +111,12 @@ def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[T
 
     qr_events = []
     for idx, event in enumerate(events):
+        if not isinstance(event, dict):
+            continue
         if event.get("type") == "qr":
             position = event.get("position")
             if isinstance(position, list) and len(position) == 2:
-                qr_events.append((event, idx))  # Stock the event and its index
+                qr_events.append((event, idx))
 
     if not qr_events:
         logger.warning("No valid QR events found.")
@@ -128,7 +131,6 @@ def get_last_qr_position(events=None, qr_events_path: Path = None) -> Optional[T
     try:
         lon, lat = map(float, position)
         logger.info(f"QR position: ({lon}, {lat})")
-        # FIXED: Always return exactly 2 values as documented
         return (lon, lat)
     except Exception as e:
         logger.error(f"Invalid QR position: {position}, error: {e}")
@@ -141,57 +143,62 @@ def normalize_position_to_3tuple(pos, default_floor=None) -> Optional[Tuple[floa
     """
     if pos is None:
         return None
-    
+
     if default_floor is None:
         default_floor = cfg.DEFAULT_FLOOR
-    
+
     try:
-        # Handle numpy arrays
-        if hasattr(pos, 'astype'):
-            pos = pos.astype(float).tolist()
-        
-        # Convert to list/tuple if needed
-        if not isinstance(pos, (list, tuple)):
-            logger.warning(f"Unexpected position type: {type(pos)}, value: {pos}")
+        if isinstance(pos, np.ndarray):
+            pos_list = pos.tolist()
+        elif isinstance(pos, (tuple, list)):
+            pos_list = list(pos)
+        else:
+            logger.warning(f"Unexpected position type: {type(pos)}")
             return None
-            
-        pos_list = list(pos)
-        
-        # Ensure we have at least 2 coordinates
-        if len(pos_list) < 2:
+
+        if pos_list is None or len(pos_list) < 2:
             logger.warning(f"Position has insufficient coordinates: {pos_list}")
             return None
-            
-        x, y = float(pos_list[0]), float(pos_list[1])
+
+        try:
+            x = float(pos_list[0])
+            y = float(pos_list[1])
+        except (ValueError, TypeError):
+            logger.warning(f"Position values not convertible to float: {pos_list}")
+            return None
         
-        # Use provided floor or default
+        if np.isnan(x) or np.isinf(x) or np.isnan(y) or np.isinf(y):
+            logger.warning(f"Position has NaN or infinity: {pos_list}")
+            return None
+
+        # Floor handling
         if len(pos_list) >= 3:
-            floor = int(pos_list[2])
+            try:
+                floor = int(pos_list[2])
+            except (ValueError, TypeError):
+                floor = default_floor
         else:
             floor = default_floor
-            
+
         return (x, y, floor)
-        
-    except (ValueError, TypeError) as e:
+    except Exception as e:
         logger.error(f"Failed to normalize position {pos}: {e}")
         return None
+
 
 def get_latest_positions() -> Tuple[Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]], Optional[Tuple[float, float, int]]]:
     """
     Get the latest positions: PDR, (WiFi), QR.
     Return three 3-tuples (x, y, floor) or None for each.
-    FIXED: Always return consistent 3-tuple format.
     """
     # PDR
     pdr_pos = None
     try:
-        res = load_imu(cfg.PDR_TRACE)
-        logger.debug(f"DEBUG load_imu returned -> {res!r}")
-        accel, gyro, fs = res
+        accel, gyro, fs = load_imu(cfg.PDR_TRACE)
         if accel.shape[0] < 2 or fs <= 0:
             raise ValueError("Insufficient IMU data for PDR")
         dx, dy = pdr_delta(accel, gyro, fs)
-        # FIXED: Normalize PDR delta to 3-tuple
+        
         pdr_pos = normalize_position_to_3tuple((dx, dy))
     except Exception as e:
         logger.warning(f"PDR skipped: {e}")
@@ -204,10 +211,13 @@ def get_latest_positions() -> Tuple[Optional[Tuple[float, float, int]], Optional
     try:
         qr_geo = get_last_qr_position(qr_events_path=cfg.QR_EVENTS_FILE)
         if qr_geo:
-            # qr_geo is (lon, lat), convert to local coordinates
-            x, y = ll_to_local(*qr_geo)
-            # FIXED: Normalize to 3-tuple with default floor
-            qr_pos = normalize_position_to_3tuple((x, y))
+        # Check for NaN or infinity in QR coordinates
+            if any((v is None or (isinstance(v, float) and (np.isnan(v) or np.isinf(v)))) for v in qr_geo):
+                logger.warning(f"QR coordinates invalid: {qr_geo}")
+                qr_pos = None
+            else:
+                x, y = ll_to_local(*qr_geo)
+                qr_pos = normalize_position_to_3tuple((x, y))
     except Exception as e:
         logger.warning(f"QR position failed: {e}")
 

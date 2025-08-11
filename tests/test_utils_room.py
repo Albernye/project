@@ -26,4 +26,4 @@ def test_load_room_positions(room_csv):
 
 def test_get_room_position(patch_room_cache):
     pos = patch_room_cache.get_room_position("2-201")
-    assert pos == (2.0, 41.4)
+    assert pos == (2.0, 41.4, 2)

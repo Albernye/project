@@ -8,11 +8,31 @@ logger = logging.getLogger(__name__)
 
 def load_imu(pdr_file):
     """Load IMU data from CSV and return accel (Nx3), gyro (Nx3, rad/s), and sampling rate fs."""
-    df = pd.read_csv(pdr_file, delimiter=';')
-    accel = df[['ACCE_X','ACCE_Y','ACCE_Z']].values
-    gyro_deg = df[['GYRO_X','GYRO_Y','GYRO_Z']].values
+    try:
+        df = pd.read_csv(pdr_file, sep=';', skipinitialspace=True)
+    except Exception as e:
+        print(f"Error with semicolon delimiter: {e}")
+
+    if len(df.columns) == 1: 
+        df = pd.read_csv(pdr_file, sep=',', skipinitialspace=True)
+        print("Fallback to comma delimiter.")
+
+    required_columns = ['ACCE_X', 'ACCE_Y', 'ACCE_Z', 'GYRO_X', 'GYRO_Y', 'GYRO_Z']
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError("CSV file does not contain expected columns.")
+
+    time_column = None # Determine which column to use for time
+    if 'time' in df.columns:
+        time_column = 'time'
+    elif 'timestamp' in df.columns:
+        time_column = 'timestamp'
+    else:
+        raise ValueError("CSV file does not contain a valid time column ('time' or 'timestamp').")
+
+    accel = df[['ACCE_X', 'ACCE_Y', 'ACCE_Z']].values
+    gyro_deg = df[['GYRO_X', 'GYRO_Y', 'GYRO_Z']].values
     gyro = np.deg2rad(gyro_deg)
-    timestamps = df['timestamp'].values.astype(float)
+    timestamps = df[time_column].values.astype(float)
     dt = np.diff(timestamps)
     fs = 1.0 / np.mean(dt) if len(dt) > 1 else None
     return accel, gyro, fs

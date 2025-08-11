@@ -10,7 +10,7 @@ from flask import Flask, render_template, request, jsonify
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from services.geolocate import get_latest_positions
+from services.geolocate import get_latest_positions,initialize_coordinate_system
 from algorithms.fusion import fuse, reset_kalman
 from services.record_realtime import record_realtime
 from algorithms.pathfinding import PathFinder
@@ -70,7 +70,7 @@ def normalize_room_id(room_id):
         else:
             return None
 
-    # CCompact case "FNN" (3 digits): F = floor, NN = number
+    # Compact case "FNN" (3 digits): F = floor, NN = number
     if len(room_id) == 3 and room_id.isdigit():
         floor = int(room_id[0])
         num   = int(room_id[1:])
@@ -108,7 +108,6 @@ def get_node_position(node_id, corridor_data):
 corridor_data = load_corridor_data()
 pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
 
-# Fixed /position route for app.py
 
 @app.route('/position')
 def get_position():
@@ -117,31 +116,32 @@ def get_position():
     if not room:
         return jsonify({"error": "Missing 'room' parameter"}), 400
     try:
-        pdr_pos, finger_pos, qr_reset = get_latest_positions()
-    
-        # Note: finger_pos is deprecated (WiFi fingerprinting removed)
-        fused_pos = fuse(pdr_delta=pdr_pos, qr_anchor=qr_reset, room=room)
-
-        # Remove the defensive to_float_list conversion since fusion handles it
-        if not isinstance(fused_pos, (list, tuple)) or len(fused_pos) < 3:
-            logger.error(f"Fusion returned invalid format: {fused_pos}")
-            return jsonify({"error": "Internal position calculation error"}), 500
-            
-        x, y, floor = fused_pos
-        
+        result = get_latest_positions()
+        if not result or len(result) != 3:
+            pdr_pos, finger_pos, qr_reset = None, None, None
+        else:
+            pdr_pos, finger_pos, qr_reset = result
+        def to_float_list(pos):
+            if pos is None:
+                return [0.0, 0.0, 0.0]
+            if isinstance(pos, (list, tuple)) and all(isinstance(x, (int, float)) for x in pos):
+                return list(map(float, pos))
+            try:
+                import numpy as np
+                if isinstance(pos, np.ndarray):
+                    return pos.astype(float).tolist()
+            except ImportError:
+                pass
+            return [0.0, 0.0, 0.0]
+        fused_pos = fuse(pdr_pos, qr_reset, room=room)
+        pos_list = to_float_list(fused_pos)
         return jsonify({
-            "position": [float(x), float(y), int(floor)],
+            "position": pos_list,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "sources": {
-                "pdr": bool(pdr_pos), 
-                "fingerprint": False,  # Deprecated
-                "qr_reset": bool(qr_reset)
-            }
+            "sources": {"pdr": bool(pdr_pos), "fingerprint": False, "qr_reset": bool(qr_reset)}
         })
-        
     except Exception as e:
         logger.error(f"Error in /position: {e}")
-        logger.debug(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 @app.route('/route')
@@ -203,7 +203,7 @@ def get_route():
         })
         
     except Exception as e:
-        logger.exception("Error calculating route")  # Log the exception
+        logger.exception("Error calculating route")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')
@@ -229,7 +229,6 @@ def location():
     if not room:
         return "❌ Missing 'room' parameter", 400
 
-    # More robust validation
     normalized_room = normalize_room_id(room)
     if not normalized_room:
         return f"❌ Invalid room number: {room}", 400
@@ -524,6 +523,7 @@ def health_check():
     })
 
 if __name__ == '__main__':
+    initialize_coordinate_system()
     logger.info("🌐 Starting Flask server...")
     if not pathfinder:
         logger.warning("⚠️ Pathfinder not available - check corridor_graph.json")
