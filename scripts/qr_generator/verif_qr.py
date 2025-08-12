@@ -15,4 +15,4 @@ def inspect_qr_codes(folder):
                 print(f"⚠️ Aucun QR code lisible dans {filename}")
 
 # Example usage
-inspect_qr_codes('qrcodes')
+inspect_qr_codes('web/qrcodes')

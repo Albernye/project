@@ -1,6 +1,7 @@
 import qrcode
 from PIL import Image, ImageDraw, ImageFont
 import os
+from web.app import get_project_root
 from config import config
 
 def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
@@ -9,10 +10,10 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
     and place them in project/qrcodes.
     """
     if base_url is None:
-        base_url = config.qr_base_url
+        base_url = config.base_url
 
     if output_dir is None:
-        output_dir = os.path.join(config.get_project_root(), 'qrcodes')
+        output_dir = os.path.join(get_project_root(), 'web/qrcodes')
 
     os.makedirs(output_dir, exist_ok=True)
 
@@ -23,7 +24,7 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
         font = ImageFont.load_default()
 
     for room_number in range(201, 226):
-        room_url = f"{base_url}{room_number}"
+        room_url = f"{base_url}/location?room={room_number}"
         qr = qrcode.make(room_url)
 
         # Convert to RGB image for editing
@@ -37,7 +38,7 @@ def generate_qr_codes(base_url: str = None, output_dir: str = None) -> str:
 
         # Add the text (room number centered)
         draw = ImageDraw.Draw(new_img)
-        text = f"Salle {room_number}"
+        text = f"Room {room_number}"
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         draw.text(((width - text_width) / 2, height + 10), text, fill="black", font=font)
