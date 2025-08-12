@@ -99,19 +99,22 @@ Set up environment variables by copying .env.example to .env and adjusting as ne
 
 ## Usage
 
-Running the Server
+### Running the Server
 To start the Flask server, execute the following command from the root directory of the project:
 python web/app.py
 This will start the server, and the application will be accessible at http://localhost:5000.
-Generating QR Codes
+
+### Generating QR Codes
 You can generate QR codes for rooms using the script located in the scripts/qr_generator directory. Run:
 python scripts/qr_generator/generate_qr.py
 This script will create QR codes for each room and save them in the web/qrcodes directory.
 
-## Testing
+### Testing
 
 To run tests, use the following command:
+```text
 pytest tests/
+```
 This will execute the test suite and provide output regarding test results.
 
 ## Contributing
