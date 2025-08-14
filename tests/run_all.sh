@@ -66,7 +66,7 @@ run_python_tests() {
 
     # Ensure we have the test dependencies
     echo -e "${YELLOW}Ensuring test dependencies are installed...${NC}"
-    pip install -r requirements.txt
+    uv sync
 
     # Run tests using pytest, capturing the exit status
     echo -e "${YELLOW}Running Python unit tests...${NC}"
@@ -90,6 +90,13 @@ main() {
 
     # Check server status
     check_server
+
+    # Run all API route tests
+    print_section "API Route Tests"
+    for f in "$TESTS_DIR"/api_test_*.sh; do
+        echo -e "${YELLOW}Running $f ...${NC}"
+        bash "$f"
+    done
 
     # Print summary
     print_section "Test Summary"

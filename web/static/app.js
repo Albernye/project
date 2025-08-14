@@ -1,147 +1,249 @@
 document.addEventListener('DOMContentLoaded', () => {
-  console.log("=== DÉBUT INITIALISATION APP ===");
-  
-  // ——————————————————————————————
-  // 1. DIAGNOSTIC COMPLET
-  // ——————————————————————————————
-  
-  // Vérifier que Leaflet est chargé
-  if (typeof L === 'undefined') {
-    console.error("❌ ERREUR CRITIQUE: Leaflet n'est pas chargé!");
-    alert("Leaflet non chargé. Vérifiez votre connexion internet.");
-    return;
-  }
-  console.log("✅ Leaflet chargé:", L.version);
-
-  // Vérifier l'élément map
-  const mapEl = document.getElementById('map');
-  if (!mapEl) {
-    console.error("❌ ERREUR CRITIQUE: Élément #map introuvable!");
-    return;
-  }
-  console.log("✅ Élément map trouvé:", mapEl);
-  
-  // Vérifier les dimensions de l'élément map
-  const mapRect = mapEl.getBoundingClientRect();
-  console.log("📐 Dimensions map:", {
-    width: mapRect.width,
-    height: mapRect.height,
-    top: mapRect.top,
-    left: mapRect.left
-  });
-  
-  if (mapRect.width === 0 || mapRect.height === 0) {
-    console.error("❌ ERREUR: La carte a des dimensions nulles!");
-    console.log("🔍 Styles appliqués:", window.getComputedStyle(mapEl));
-  }
-  const initialRoom = mapEl.dataset.room;
-  console.log("🏠 Room initiale:", initialRoom);
+  console.log("=== BEGINNING APP INITIALIZATION ===");
 
   // ——————————————————————————————
-  // 2. INITIALISATION CARTE STEP BY STEP
+  // 1. GLOBAL VARIABLES AND CONFIGURATION
   // ——————————————————————————————
-  
+
   let map;
   let userMarker;
+  let routeLayer = null;
+  let pollingInterval = null;
+  let currentRoom;
+  let lastPolledRoom;
 
-  try {
-    console.log("🗺️ Création de l'instance Leaflet...");
-    
-    map = L.map('map', {
-      crs: L.CRS.EPSG4326,
-      minZoom: 0,
-      maxZoom: 4,
-      zoomControl: true,
-      attributionControl: false
+  // Map configuration constants
+  const MAP_CONFIG = {
+    IMAGE_WIDTH: 2556,
+    IMAGE_HEIGHT: 816,
+    IMAGE_PATH: '/static/OBuilding_Floor2.png',
+    DEFAULT_ZOOM: 1,
+    MAX_ZOOM: 4,
+    MIN_ZOOM: 0,
+    UPDATE_INTERVAL: 5000, // 5 seconds
+    ANIMATION_STEPS: 10
+  };
+
+  // ——————————————————————————————
+  // 2. ROOM DETECTION AND URL MANAGEMENT
+  // ——————————————————————————————
+
+  /**
+   * Get the current room from URL parameters or map element data
+   * @returns {string} Room identifier
+   */
+  function getRoomFromURL() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const room = urlParams.get('room');
+    const mapEl = document.getElementById('map');
+    return room ? room : (mapEl ? mapEl.dataset.room : null);
+  }
+
+  /**
+   * Initialize room tracking from URL
+   */
+  function initializeRoom() {
+    currentRoom = getRoomFromURL();
+    lastPolledRoom = currentRoom;
+    console.log("🏠 Initial room:", currentRoom);
+  }
+
+  /**
+   * Check for room changes in URL and restart polling if needed
+   */
+  function checkRoomChangeAndUpdatePolling() {
+    const newRoom = getRoomFromURL();
+    if (newRoom !== lastPolledRoom) {
+      console.log('🔄 Room changed from', lastPolledRoom, 'to', newRoom);
+      currentRoom = newRoom;
+      lastPolledRoom = newRoom;
+
+      // Écriture d'un événement QR côté serveur
+      fetch('/change_room', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: newRoom })
+      })
+      .then(res => res.json())
+      .then(data => {
+        console.log('✅ QR event written for room:', data.room);
+        // Clear existing polling interval
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+        }
+        // Immediate position update and restart polling
+        updatePosition(false);
+        pollingInterval = setInterval(() => updatePosition(true), MAP_CONFIG.UPDATE_INTERVAL);
+        console.log('🔄 Polling restarted for room:', currentRoom);
+      })
+      .catch(err => {
+        console.error('❌ Error writing QR event:', err);
+        handleError(err);
+      });
+    }
+  }
+
+  // ——————————————————————————————
+  // 3. DIAGNOSTIC AND VALIDATION
+  // ——————————————————————————————
+
+  /**
+   * Verify that all required dependencies are loaded
+   * @returns {boolean} True if all dependencies are available
+   */
+  function validateDependencies() {
+    // Verify Leaflet is loaded
+    if (typeof L === 'undefined') {
+      console.error("❌ CRITICAL ERROR: Leaflet is not loaded!");
+      alert("Leaflet not loaded. Please check your internet connection.");
+      return false;
+    }
+    console.log("✅ Leaflet loaded:", L.version);
+
+    // Verify map element exists
+    const mapEl = document.getElementById('map');
+    if (!mapEl) {
+      console.error("❌ CRITICAL ERROR: Element #map not found!");
+      return false;
+    }
+    console.log("✅ Map element found:", mapEl);
+
+    // Check map element dimensions
+    const mapRect = mapEl.getBoundingClientRect();
+    console.log("📐 Map dimensions:", {
+      width: mapRect.width,
+      height: mapRect.height,
+      top: mapRect.top,
+      left: mapRect.left
     });
-    console.log("✅ Instance Leaflet créée");
+    
+    if (mapRect.width === 0 || mapRect.height === 0) {
+      console.error("❌ ERROR: Map has zero dimensions!");
+      console.log("🔍 Applied styles:", window.getComputedStyle(mapEl));
+    }
 
-    // Utiliser les bounds calibrés directement
-    // Configuration du système de coordonnées simple (pixels)
-    map.options.crs = L.CRS.Simple;
-    
-    // Dimensions de l'image en pixels
-    const imgWidth = 2556;
-    const imgHeight = 816;
-    
-    // Définir les bounds [sud-ouest, nord-est] en y,x
-    const southWest = map.unproject([0, imgHeight], 0);
-    const northEast = map.unproject([imgWidth, 0], 0);
-    const mapBounds = new L.LatLngBounds(southWest, northEast);
-    
-    // Ajouter l'image overlay avec les bons bounds
-    L.imageOverlay(
-      '/static/OBuilding_Floor2.png',
-      mapBounds,
-      { 
+    return true;
+  }
+
+  // ——————————————————————————————
+  // 4. MAP INITIALIZATION
+  // ——————————————————————————————
+
+  /**
+   * Initialize Leaflet map with custom coordinate system
+   * @returns {boolean} True if initialization successful
+   */
+  function initializeMap() {
+    try {
+      console.log("Creating Leaflet map instance...");
+
+      // Create map with Simple CRS for pixel-based coordinates
+      map = L.map('map', {
+        crs: L.CRS.Simple,
+        minZoom: MAP_CONFIG.MIN_ZOOM,
+        maxZoom: MAP_CONFIG.MAX_ZOOM,
+        zoomControl: true,
+        attributionControl: false
+      });
+
+      console.log("✅ Leaflet map instance created");
+
+      // Calculate bounds for the image overlay
+      const southWest = map.unproject([0, MAP_CONFIG.IMAGE_HEIGHT], 0);
+      const northEast = map.unproject([MAP_CONFIG.IMAGE_WIDTH, 0], 0);
+      const mapBounds = new L.LatLngBounds(southWest, northEast);
+
+      // Add building floor plan as image overlay
+      L.imageOverlay(MAP_CONFIG.IMAGE_PATH, mapBounds, {
         opacity: 1.0,
         interactive: false,
         crossOrigin: false
-      }
-    ).addTo(map)
-      .on('load', () => console.log("✅ Image overlay chargée avec succès"))
-      .on('error', (e) => console.error("❌ Erreur chargement image overlay:", e));
-    
-    // Définir la vue et les limites
-    map.setView(mapBounds.getCenter(), 1);
-    map.setMaxBounds(mapBounds);
-    console.log("✅ Configuration CRS Simple avec dimensions réelles");
-    
-    // Forcer le redimensionnement après un délai
-    setTimeout(() => {
-      console.log("🔄 Invalidation taille carte...");
-      map.invalidateSize();
-      console.log("✅ Taille carte invalidée");
-    }, 250);
+      })
+      .addTo(map)
+      .on('load', () => console.log("✅ Building floor plan loaded successfully"))
+      .on('error', (e) => console.error("❌ Error loading floor plan:", e));
 
-  } catch (error) {
-    console.error("❌ ERREUR lors de l'initialisation carte:", error);
-    alert(`Erreur carte: ${error.message}`);
-    return;
+      // Set initial view and bounds
+      map.setView(mapBounds.getCenter(), MAP_CONFIG.DEFAULT_ZOOM);
+      map.setMaxBounds(mapBounds);
+
+      console.log("✅ Map configured with Simple CRS and real dimensions");
+
+      // Force map size recalculation after DOM is ready
+      setTimeout(() => {
+        console.log("Recalculating map size...");
+        map.invalidateSize();
+        console.log("✅ Map size recalculated");
+      }, 250);
+
+      return true;
+
+    } catch (error) {
+      console.error("❌ ERROR during map initialization:", error);
+      alert(`Map initialization error: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Add user position marker to the map
+   */
+  function initializeUserMarker() {
+    console.log("📌 Adding user position marker...");
+    
+    // Default position (will be updated by position polling)
+    userMarker = L.marker([41.406368, 2.175568], {
+      title: 'Your current position',
+      draggable: false
+    }).addTo(map);
+    
+    console.log("✅ User marker added to map");
   }
 
   // ——————————————————————————————
-  // 3. MARQUEUR UTILISATEUR
+  // 5. UTILITY FUNCTIONS
   // ——————————————————————————————
-  
-  console.log("📌 Ajout marqueur utilisateur...");
-  userMarker = L.marker([41.406368, 2.175568], {
-    title: 'Votre position',
-    draggable: false
-  }).addTo(map);
-  console.log("✅ Marqueur utilisateur ajouté");
-  let routeLayer = null;
 
-  // ——————————————————————————————
-  // 4. FONCTIONS UTILITAIRES
-  // ——————————————————————————————
-  
+  /**
+   * Display error messages to the user in a non-intrusive way
+   * @param {Error|string} err - Error object or message
+   */
   function handleError(err) {
-    console.error("🚨 Erreur application:", err);
-    
-    // Affichage d'erreur plus discret mais visible
+    console.error("🚨 Application error:", err);
+
+    // Create temporary error toast notification
     const toast = document.createElement('div');
     toast.style.cssText = `
       position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
       background: #ff4444; color: white; padding: 12px 20px;
       border-radius: 6px; z-index: 10000; font-size: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      max-width: 300px; text-align: center;
     `;
-    toast.textContent = `Erreur: ${err.message || err}`;
+    toast.textContent = `Error: ${err.message || err}`;
     document.body.appendChild(toast);
     
+    // Auto-remove toast after 5 seconds
     setTimeout(() => {
       if (toast.parentNode) toast.remove();
     }, 5000);
   }
 
+  /**
+   * Show status messages in the coordinates display
+   * @param {string} message - Status message to display
+   * @param {string} color - CSS color for the message
+   */
   function showStatus(message, color = '#333') {
     console.log("📢 Status:", message);
     const statusEl = document.getElementById('coordinates');
+    
     if (statusEl) {
       const originalText = statusEl.textContent;
       statusEl.style.color = color;
       statusEl.textContent = message;
+      
+      // Restore original content after 3 seconds
       setTimeout(() => {
         statusEl.style.color = '';
         if (statusEl.textContent === message) {
@@ -152,275 +254,339 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 5. MISE À JOUR POSITION
+  // 6. POSITION TRACKING
   // ——————————————————————————————
-  
-  async function updatePosition() {
-  try {
-    await fetch("/scan_qr", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ room: initialRoom })
-    });
-    console.log("🔄 Mise à jour position...");
-    showStatus("Mise à jour...", "#007AFF");
-    
-    // Récupérer la position depuis le serveur
-    const res = await fetch(`/position?room=${initialRoom}`);
-    if (!res.ok) {
-      throw new Error(`Erreur serveur: ${res.status} ${res.statusText}`);
-    }
 
-    const data = await res.json();
-    console.log("📡 Données reçues:", data);
+  /**
+   * Update user position from server and animate marker movement
+   * @param {boolean} animate - Whether to animate the marker movement
+   */
+  async function updatePosition(animate = true) {
+    try {
+      console.log("🔄 Updating position for room:", currentRoom);
+      showStatus("Updating position...", "#007AFF");
 
-    const { position, timestamp } = data;
-    const [lng, lat] = position;
+      // Fetch current position from server
+      const response = await fetch(`/position?room=${currentRoom}`);
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status} ${response.statusText}`);
+      }
 
-      // Mettre à jour le marqueur
-      userMarker.setLatLng([lat, lng]);
-      
-      // Mettre à jour l'interface
-      const coordsEl = document.getElementById('coordinates');
-      const timestampEl = document.getElementById('timestamp');
-      
-      if (coordsEl) {
-        coordsEl.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-        coordsEl.style.color = '#4CAF50';
+      const data = await response.json();
+      const { position, timestamp, walked_distance } = data;
+      const [lng, lat] = position;
+
+      const currentLatLng = userMarker.getLatLng();
+      const newLatLng = L.latLng(lat, lng);
+
+      // Smooth animation if requested
+      if (animate) {
+        animateMarkerMovement(currentLatLng, newLatLng);
+      } else {
+        userMarker.setLatLng(newLatLng);
       }
-      if (timestampEl) {
-        timestampEl.textContent = new Date(timestamp).toLocaleTimeString();
+
+      // Pan to marker only if it's outside the current view
+      if (!map.getBounds().contains(newLatLng)) {
+        map.panTo(newLatLng, { animate: true });
       }
-      // Centrer si nécessaire
-      if (!map.getBounds().contains([lat, lng])) {
-        map.setView([lat, lng], map.getZoom());
-      }
-      
-      console.log("✅ Position mise à jour:", lat, lng);
-      
+
+      // Update UI elements with new data
+      updateUIElements(lat, lng, timestamp, walked_distance);
+
     } catch (error) {
-      console.error("❌ Erreur mise à jour position:", error);
-      showStatus("Erreur position", "#ff4444");
+      console.error("❌ Position update error:", error);
+      showStatus("Position update failed", "#ff4444");
       handleError(error);
     }
   }
 
-  // ——————————————————————————————
-  // 6. GESTION BOUTONS
-  // ——————————————————————————————
-  
-  // Bouton Route
-const goBtn = document.getElementById('goBtn');
-if (goBtn) {
-  goBtn.addEventListener('click', async () => {
-    const destSelect = document.getElementById('destSelect');
-    const dest = destSelect?.value;
-    if (!dest) {
-      alert('Veuillez sélectionner une destination');
-      return;
+  /**
+   * Animate marker movement between two positions
+   * @param {L.LatLng} startPos - Starting position
+   * @param {L.LatLng} endPos - Target position
+   */
+  function animateMarkerMovement(startPos, endPos) {
+    const steps = MAP_CONFIG.ANIMATION_STEPS;
+    const deltaLat = (endPos.lat - startPos.lat) / steps;
+    const deltaLng = (endPos.lng - startPos.lng) / steps;
+
+    let currentStep = 0;
+    
+    const animate = () => {
+      if (currentStep < steps) {
+        currentStep++;
+        userMarker.setLatLng([
+          startPos.lat + deltaLat * currentStep,
+          startPos.lng + deltaLng * currentStep
+        ]);
+        requestAnimationFrame(animate);
+      }
+    };
+    
+    animate();
+  }
+
+  /**
+   * Update UI elements with new position data
+   * @param {number} lat - Latitude
+   * @param {number} lng - Longitude  
+   * @param {string} timestamp - Position timestamp
+   * @param {number} walked_distance - Distance walked
+   */
+  function updateUIElements(lat, lng, timestamp, walked_distance) {
+    const coordsEl = document.getElementById('coordinates');
+    const timestampEl = document.getElementById('timestamp');
+    const walkedDistanceEl = document.getElementById('walkedDistance');
+
+    if (coordsEl) {
+      coordsEl.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     }
+    
+    if (timestampEl) {
+      timestampEl.textContent = new Date(timestamp).toLocaleTimeString();
+    }
+    
+    if (walkedDistanceEl && typeof walked_distance === 'number') {
+      walkedDistanceEl.textContent = `${walked_distance.toFixed(2)}m`;
+    }
+  }
 
+  // ——————————————————————————————
+  // 7. QR CODE SCANNING
+  // ——————————————————————————————
+
+  /**
+   * Process QR code scan and update position accordingly
+   * @param {string} room - Room identifier from QR code
+   */
+  async function scanQR(room) {
     try {
-      goBtn.disabled = true;
-      goBtn.textContent = 'Calcul...';
-      showStatus("Calcul itinéraire...", "#007AFF");
+      console.log("📱 Processing QR scan for room:", room);
+      
+      const response = await fetch("/scan_qr", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ room })
+      });
 
-      const res = await fetch(`/route?from=${initialRoom}&to=${dest}`);
-      if (!res.ok) throw new Error(`Erreur route: ${res.status}`);
+      if (!response.ok) {
+        throw new Error(`QR scan error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("✅ QR scan successful:", data);
+      showStatus(`QR scanned: Room ${data.room}`, "#4CAF50");
 
-      const geojson = await res.json();
-      console.log("🛤️ GeoJSON reçu:", geojson);
+      // Update current room and position
+      currentRoom = data.room;
+      await updatePosition(false); // Immediate update without animation
 
-      // Supprimer l'ancienne route si elle existe
+      // Restart polling with new room context
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+      pollingInterval = setInterval(() => updatePosition(true), MAP_CONFIG.UPDATE_INTERVAL);
+
+      // Automatically start sensor data collection
+      collectSensorData();
+
+    } catch (error) {
+      console.error("❌ QR scan failed:", error);
+      handleError(error);
+    }
+  }
+
+  // Make scanQR available globally for QR code integration
+  window.scanQR = scanQR;
+
+  // ——————————————————————————————
+  // 8. ROUTE CALCULATION
+  // ——————————————————————————————
+
+  /**
+   * Calculate and display route between two rooms
+   * @param {string} fromRoom - Starting room
+   * @param {string} toRoom - Destination room
+   */
+  async function calculateRoute(fromRoom, toRoom) {
+    try {
+      showStatus("Calculating route...", "#007AFF");
+
+      const response = await fetch(`/route?from=${fromRoom}&to=${toRoom}`);
+      if (!response.ok) {
+        throw new Error(`Route calculation error: ${response.status}`);
+      }
+
+      const geojson = await response.json();
+      console.log("📍 Route GeoJSON received:", geojson);
+
+      // Remove existing route if present
       if (routeLayer) {
         map.removeLayer(routeLayer);
       }
 
-      // Ajouter la nouvelle route avec des styles plus visibles
+      // Add new route with visible styling
       routeLayer = L.geoJSON(geojson, {
         style: {
-          color: '#FF0000',  // Rouge pour une meilleure visibilité
-          weight: 6,         // Épaisseur de la ligne
-          opacity: 1.0,      // Opacité complète
-          dashArray: null    // Ligne continue
+          color: '#FF0000',     // Red for high visibility
+          weight: 6,            // Thick line
+          opacity: 1.0,         // Full opacity
+          dashArray: null       // Solid line
         }
       }).addTo(map);
 
-      // S'assurer que la route est devant l'image
+      // Ensure route appears above floor plan
       routeLayer.bringToFront();
 
-      // Centrer la vue sur le centre de la route, sans toucher au zoom
+      // Center view on route without changing zoom
       const routeCenter = routeLayer.getBounds().getCenter();
       map.setView(routeCenter, map.getZoom());
-      showStatus("Itinéraire calculé", "#4CAF50");
-      console.log("✅ Itinéraire affiché");
+      
+      showStatus(`Route calculated: ${geojson.total_distance?.toFixed(1)}m`, "#4CAF50");
+      console.log("✅ Route displayed successfully");
 
     } catch (error) {
-      console.error("❌ Erreur calcul route:", error);
-      showStatus("Erreur itinéraire", "#ff4444");
-      alert('Impossible de calculer l\'itinéraire');
-    } finally {
-      goBtn.disabled = false;
-      goBtn.textContent = 'Route';
+      console.error("❌ Route calculation error:", error);
+      showStatus("Route calculation failed", "#ff4444");
+      throw error;
     }
-  });
-} else {
-  console.warn("⚠️ Bouton 'goBtn' introuvable");
-}
-
-
-  // Bouton Recalibrage
-  const recalibrateBtn = document.getElementById('recalibrate');
-  if (recalibrateBtn) {
-    recalibrateBtn.addEventListener('click', async () => {
-      try {
-        recalibrateBtn.disabled = true;
-        recalibrateBtn.textContent = 'Recalibrage...';
-        showStatus("Recalibrage...", "#FF9500");
-        
-        const currentPos = userMarker.getLatLng();
-        const response = await fetch('/confirm_position', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            room: initialRoom,
-            position: [currentPos.lat, currentPos.lng]
-          })
-        });
-        
-        if (!response.ok) throw new Error(`Erreur: ${response.status}`);
-        
-        showStatus("Position recalibrée", "#4CAF50");
-        console.log("✅ Recalibrage effectué");
-        
-      } catch (error) {
-        console.error("❌ Erreur recalibrage:", error);
-        showStatus("Erreur recalibrage", "#ff4444");
-        handleError(error);
-      } finally {
-        recalibrateBtn.disabled = false;
-        recalibrateBtn.textContent = 'Recalibrate';
-      }
-    });
-  } else {
-    console.warn("⚠️ Bouton 'recalibrate' introuvable");
   }
 
   // ——————————————————————————————
-  // 7. COLLECTE CAPTEURS (Multi-plateforme)
+  // 9. SENSOR DATA COLLECTION
   // ——————————————————————————————
-  
+
+  /**
+   * Collect sensor data from device (accelerometer, gyroscope, magnetometer)
+   * Works across different platforms (iOS, Android, Desktop)
+   */
   window.collectSensorData = async () => {
-    console.log('🔄 Démarrage collecte capteurs...');
-    
+    console.log('🔄 Starting multi-platform sensor data collection...');
+
+    // Create status indicator
     const statusDiv = document.createElement('div');
     statusDiv.id = 'sensor-status';
     statusDiv.style.cssText = `
       position: fixed; top: 20px; right: 20px; z-index: 10000;
       background: rgba(0,0,0,0.9); color: white; padding: 12px;
-      border-radius: 6px; font-size: 14px; max-width: 250px;
+      border-radius: 6px; font-size: 14px; max-width: 300px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     `;
     document.body.appendChild(statusDiv);
     
-    const updateStatus = (msg, color = 'white') => {
-      statusDiv.textContent = `📱 ${msg}`;
+    const updateStatus = (message, color = 'white') => {
+      statusDiv.textContent = `📱 ${message}`;
       statusDiv.style.color = color;
     };
 
-    // Détection du type d'appareil
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isAndroid = /Android/.test(navigator.userAgent);
-    const isMobile = isIOS || isAndroid || /Mobile/.test(navigator.userAgent);
-    
-    console.log('📱 Plateforme détectée:', { isIOS, isAndroid, isMobile });
-    updateStatus(`Plateforme: ${isIOS ? 'iOS' : isAndroid ? 'Android' : 'Desktop'}`);
+    // Platform detection
+    const platformInfo = {
+      isIOS: /iPad|iPhone|iPod/.test(navigator.userAgent),
+      isAndroid: /Android/.test(navigator.userAgent),
+      isMobile: /Mobile|Android|iPhone|iPad/.test(navigator.userAgent),
+      userAgent: navigator.userAgent,
+      platform: navigator.platform
+    };
 
+    console.log('📱 Platform detected:', platformInfo);
+    updateStatus(`Platform: ${platformInfo.isIOS ? 'iOS' : platformInfo.isAndroid ? 'Android' : 'Desktop'}`);
+
+    // Check if device motion is available
     if (!window.DeviceMotionEvent) {
-      updateStatus('Capteurs non disponibles', 'orange');
+      updateStatus('Motion sensors not available', 'orange');
       setTimeout(() => statusDiv.remove(), 3000);
       return;
     }
 
-    // Fonction de collecte universelle
-    const collectData = () => {
-      updateStatus('Collecte en cours...', '#4CAF50');
-      let collected = false;
+    /**
+     * Collect sensor data from device motion events
+     */
+    const collectMotionData = () => {
+      updateStatus('Collecting sensor data...', '#4CAF50');
+      let dataCollected = false;
       
-      const timeout = setTimeout(() => {
-        if (!collected) {
-          updateStatus('Timeout - envoi données test', 'orange');
-          sendSensorData({
-            test: true,
-            room: initialRoom,
-            platform: { isIOS, isAndroid, isMobile },
-            timestamp: new Date().toISOString()
-          });
-          collected = true;
+      // Set timeout to prevent hanging
+      const collectionTimeout = setTimeout(() => {
+        if (!dataCollected) {
+          updateStatus('Timeout - sending test data', 'orange');
+          sendTestSensorData(platformInfo);
+          dataCollected = true;
         }
-      }, 2000);
+      }, 3000);
 
-      const handleMotion = (event) => {
-        if (collected) return;
-        collected = true;
-        clearTimeout(timeout);
+      // Motion event handler
+      const handleDeviceMotion = (event) => {
+        if (dataCollected) return;
         
+        dataCollected = true;
+        clearTimeout(collectionTimeout);
+        
+        // Extract sensor readings
         const sensorData = {
+          room: currentRoom,
           timestamp: new Date().toISOString(),
-          room: initialRoom,
-          platform: { isIOS, isAndroid, isMobile },
-          accelerometer: {
-            x: event.acceleration?.x || null,
-            y: event.acceleration?.y || null,
-            z: event.acceleration?.z || null
-          },
-          gyroscope: {
-            alpha: event.rotationRate?.alpha || null,
-            beta: event.rotationRate?.beta || null,
-            gamma: event.rotationRate?.gamma || null
-          },
-          accelerationIncludingGravity: {
-            x: event.accelerationIncludingGravity?.x || null,
-            y: event.accelerationIncludingGravity?.y || null,
-            z: event.accelerationIncludingGravity?.z || null
-          },
+          accelerometer: [{
+            x: event.acceleration?.x || 0,
+            y: event.acceleration?.y || 0,
+            z: event.acceleration?.z || 0
+          }],
+          gyroscope: [{
+            x: event.rotationRate?.alpha || 0,
+            y: event.rotationRate?.beta || 0,
+            z: event.rotationRate?.gamma || 0
+          }],
+          magnetometer: [{
+            x: event.accelerationIncludingGravity?.x || 0,
+            y: event.accelerationIncludingGravity?.y || 0,
+            z: event.accelerationIncludingGravity?.z || 0
+          }],
           deviceInfo: {
             userAgent: navigator.userAgent,
             platform: navigator.platform,
             language: navigator.language,
-            screen: `${screen.width}x${screen.height}`
+            screen: `${screen.width}x${screen.height}`,
+            devicePixelRatio: window.devicePixelRatio
           }
         };
-        
-        updateStatus('Envoi données...', '#2196F3');
+
+        updateStatus('Sending sensor data...', '#2196F3');
         sendSensorData(sensorData);
-        window.removeEventListener('devicemotion', handleMotion);
+        
+        // Clean up event listener
+        window.removeEventListener('devicemotion', handleDeviceMotion);
       };
 
-      window.addEventListener('devicemotion', handleMotion);
+      window.addEventListener('devicemotion', handleDeviceMotion);
     };
 
-    // Gestion des permissions iOS
-    if (isIOS && typeof DeviceMotionEvent.requestPermission === 'function') {
-      updateStatus('Demande permission iOS...', '#FF9500');
+    // Handle iOS permission requirements
+    if (platformInfo.isIOS && typeof DeviceMotionEvent.requestPermission === 'function') {
+      updateStatus('Requesting iOS motion permission...', '#FF9500');
+      
       try {
         const permission = await DeviceMotionEvent.requestPermission();
         if (permission === 'granted') {
-          collectData();
+          collectMotionData();
         } else {
-          updateStatus('Permission refusée', 'red');
+          updateStatus('Motion permission denied', 'red');
           setTimeout(() => statusDiv.remove(), 3000);
         }
       } catch (error) {
-        console.error('Erreur permission iOS:', error);
-        updateStatus('Erreur permission', 'red');
+        console.error('iOS permission request error:', error);
+        updateStatus('Permission request failed', 'red');
         setTimeout(() => statusDiv.remove(), 3000);
       }
     } else {
-      // Android et autres plateformes
-      collectData();
+      // Android and other platforms - no permission required
+      collectMotionData();
     }
   };
 
+  /**
+   * Send collected sensor data to server
+   * @param {Object} data - Sensor data to send
+   */
   async function sendSensorData(data) {
     try {
       const response = await fetch('/collect_sensor_data', {
@@ -429,66 +595,278 @@ if (goBtn) {
         body: JSON.stringify(data)
       });
       
-      const statusDiv = document.getElementById('sensor-status');
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
       
       const result = await response.json();
-      console.log('✅ Données capteurs envoyées:', result);
-      
+      console.log('✅ Sensor data sent successfully:', result);
+
+      // Update status indicator
+      const statusDiv = document.getElementById('sensor-status');
       if (statusDiv) {
-        statusDiv.textContent = '✅ Données envoyées';
+        statusDiv.textContent = '✅ Sensor data sent';
         statusDiv.style.color = '#4CAF50';
         setTimeout(() => statusDiv.remove(), 2000);
       }
       
     } catch (error) {
-      console.error('❌ Erreur envoi capteurs:', error);
+      console.error('❌ Sensor data transmission error:', error);
+      
       const statusDiv = document.getElementById('sensor-status');
       if (statusDiv) {
-        statusDiv.textContent = '❌ Erreur envoi';
+        statusDiv.textContent = '❌ Transmission failed';
         statusDiv.style.color = 'red';
         setTimeout(() => statusDiv.remove(), 3000);
       }
     }
   }
 
+  /**
+   * Send test sensor data when real sensors are unavailable
+   * @param {Object} platformInfo - Platform detection information
+   */
+  function sendTestSensorData(platformInfo) {
+    const testData = {
+      room: currentRoom,
+      timestamp: new Date().toISOString(),
+      test: true,
+      platform: platformInfo,
+      accelerometer: [{ x: 0, y: 0, z: 9.8 }],
+      gyroscope: [{ x: 0, y: 0, z: 0 }],
+      magnetometer: [{ x: 0, y: 0, z: 0 }]
+    };
+    
+    sendSensorData(testData);
+  }
+
   // ——————————————————————————————
-  // 8. DÉMARRAGE ET ÉVÉNEMENTS
+  // 10. BUTTON EVENT HANDLERS
   // ——————————————————————————————
-  
-  // Première mise à jour après un délai
-  setTimeout(updatePosition, 1000);
-  
-  // Mise à jour périodique
-  const updateInterval = setInterval(updatePosition, 5000);
-  
-  // Gestion redimensionnement
-  const handleResize = () => {
-    console.log("🔄 Redimensionnement détecté");
+
+  /**
+   * Initialize route calculation button
+   */
+  function initializeRouteButton() {
+    const goBtn = document.getElementById('goBtn');
+    if (!goBtn) {
+      console.warn("⚠️ Route button 'goBtn' not found");
+      return;
+    }
+
+    goBtn.addEventListener('click', async () => {
+      const destSelect = document.getElementById('destSelect');
+      const destination = destSelect?.value;
+      
+      if (!destination) {
+        alert('Please select a destination');
+        return;
+      }
+
+      try {
+        // Disable button during calculation
+        goBtn.disabled = true;
+        goBtn.textContent = 'Calculating...';
+
+        await calculateRoute(currentRoom, destination);
+
+      } catch (error) {
+        alert('Unable to calculate route. Please try again.');
+      } finally {
+        // Re-enable button
+        goBtn.disabled = false;
+        goBtn.textContent = 'Calculate Route';
+      }
+    });
+
+    console.log("✅ Route calculation button initialized");
+  }
+
+  /**
+   * Initialize position recalibration button
+   */
+  function initializeRecalibrateButton() {
+    const recalibrateBtn = document.getElementById('recalibrate');
+    if (!recalibrateBtn) {
+      console.warn("⚠️ Recalibrate button not found");
+      return;
+    }
+
+    recalibrateBtn.addEventListener('click', async () => {
+      try {
+        recalibrateBtn.disabled = true;
+        recalibrateBtn.textContent = 'Recalibrating...';
+        showStatus("Recalibrating position...", "#FF9500");
+
+        const currentPos = userMarker.getLatLng();
+        const response = await fetch('/confirm_position', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room: currentRoom,
+            position: [currentPos.lat, currentPos.lng]
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Recalibration failed: ${response.status}`);
+        }
+
+        showStatus("Position recalibrated successfully", "#4CAF50");
+        console.log("✅ Position recalibration successful");
+
+      } catch (error) {
+        console.error("❌ Recalibration error:", error);
+        showStatus("Recalibration failed", "#ff4444");
+        handleError(error);
+      } finally {
+        recalibrateBtn.disabled = false;
+        recalibrateBtn.textContent = 'Recalibrate Position';
+      }
+    });
+
+    console.log("✅ Position recalibration button initialized");
+  }
+
+  // ——————————————————————————————
+  // 11. EVENT LISTENERS AND RESPONSIVE HANDLING
+  // ——————————————————————————————
+
+  /**
+   * Handle window resize events to maintain map layout
+   */
+  function handleWindowResize() {
+    console.log("🖥️ Window resize detected");
+    
     setTimeout(() => {
       if (map) {
         map.invalidateSize();
-        const imageBounds = [
-          [41.406406579820214, 2.1949513612820226],
-          [41.40687698399577, 2.1943470620768153]
-        ];
-        map.fitBounds(imageBounds);
+        console.log("✅ Map size recalculated for new window dimensions");
       }
     }, 100);
-  };
-  
-  window.addEventListener('resize', handleResize);
-  window.addEventListener('orientationchange', () => {
-    setTimeout(handleResize, 300);
-  });
-  
-  // Gestion visibilité page
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden && map) {
-      setTimeout(() => map.invalidateSize(), 100);
-    }
-  });
+  }
 
-  console.log("✅ === INITIALISATION APP TERMINÉE ===");
-  showStatus("Application prête", "#4CAF50");
+  /**
+   * Handle device orientation changes (mobile)
+   */
+  function handleOrientationChange() {
+    console.log("📱 Device orientation changed");
+    
+    // Delay to allow orientation change to complete
+    setTimeout(() => {
+      handleWindowResize();
+    }, 300);
+  }
+
+  /**
+   * Handle page visibility changes to maintain map state
+   */
+  function handleVisibilityChange() {
+    if (!document.hidden && map) {
+      // Page became visible - recalculate map size
+      setTimeout(() => {
+        map.invalidateSize();
+        console.log("✅ Map refreshed after page became visible");
+      }, 100);
+    }
+  }
+
+  /**
+   * Set up URL monitoring for room changes
+   */
+  function initializeURLMonitoring() {
+    // Listen for browser navigation events
+    window.addEventListener('popstate', checkRoomChangeAndUpdatePolling);
+    window.addEventListener('hashchange', checkRoomChangeAndUpdatePolling);
+
+    // Fallback: check for URL changes every second
+    setInterval(checkRoomChangeAndUpdatePolling, 1000);
+    
+    console.log("✅ URL monitoring initialized");
+  }
+
+  /**
+   * Initialize all event listeners
+   */
+  function initializeEventListeners() {
+    window.addEventListener('resize', handleWindowResize);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    console.log("✅ Event listeners initialized");
+  }
+
+  // ——————————————————————————————
+  // 12. APPLICATION STARTUP
+  // ——————————————————————————————
+
+  /**
+   * Start position polling after initialization
+   */
+  function startPositionPolling() {
+    console.log("🔄 Starting position polling...");
+    
+    // Initial position update
+    setTimeout(() => {
+      updatePosition(false);
+      
+      // Start regular polling
+      pollingInterval = setInterval(() => {
+        updatePosition(true);
+      }, MAP_CONFIG.UPDATE_INTERVAL);
+      
+      console.log(`✅ Position polling started (interval: ${MAP_CONFIG.UPDATE_INTERVAL}ms)`);
+    }, 1000);
+  }
+
+  /**
+   * Main application initialization function
+   */
+  function initializeApp() {
+    try {
+      // Step 1: Validate dependencies
+      if (!validateDependencies()) {
+        return false;
+      }
+
+      // Step 2: Initialize room tracking
+      initializeRoom();
+
+      // Step 3: Initialize map
+      if (!initializeMap()) {
+        return false;
+      }
+
+      // Step 4: Add user marker
+      initializeUserMarker();
+
+      // Step 5: Initialize UI components
+      initializeRouteButton();
+      initializeRecalibrateButton();
+
+      // Step 6: Set up event listeners
+      initializeEventListeners();
+      initializeURLMonitoring();
+
+      // Step 7: Start position tracking
+      startPositionPolling();
+
+      console.log("✅ === APPLICATION INITIALIZATION COMPLETE ===");
+      showStatus("Application ready", "#4CAF50");
+      
+      return true;
+
+    } catch (error) {
+      console.error("❌ Application initialization failed:", error);
+      handleError(error);
+      return false;
+    }
+  }
+
+  // ——————————————————————————————
+  // 13. START APPLICATION
+  // ——————————————————————————————
+
+  // Initialize the application
+  initializeApp();
 });

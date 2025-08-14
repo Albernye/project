@@ -17,11 +17,13 @@ PHASE D: Fusion & Recalibration
 [x] Automatic recalibration via Wi-Fi (if deviation >2m)
 [x] Improved sensor fusion logic in `fusion.py`
 
-PHASE E: Web UI & Map Display (Upcoming)
-[x] Start front-end work:
-[ ]	- Show position on Leaflet
-[ ]	- Display QR
-[ ]	- Simulate and visualize results
+PHASE E: Web UI & Map Display (In Progress)
+[x] Start front-end work
+[x] Show position and user marker on Leaflet (real-time update)
+[x] Room change detection and immediate marker update
+[x] QR event logging and integration with Flask backend
+[x] Simulate and visualize results (API route tests, fusion logic)
+[ ] Display QR codes in UI
 
 PHASE F: Deployment
 [ ] Dockerize backend
@@ -29,8 +31,10 @@ PHASE F: Deployment
 
 PHASE G: Monitoring & UX
 [x] Log sensor errors and fusion failures
+[x] Automated API and unit tests (run_all.sh, test scripts)
+[x] User-friendly README
+[x] Robust error handling in JS and Flask
 [ ] Email/Slack alerts for outages
 [ ] Setup, user, and developer documentation
-[x] User-friendly README
 [ ] Comments and docstrings
 [ ] Modularity and reusability

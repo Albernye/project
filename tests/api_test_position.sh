@@ -1,6 +1,5 @@
 #!/bin/bash
 # API test for /position endpoint
-# tests/api_test_position.sh
 
 set -e  # Exit on any error
 

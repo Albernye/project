@@ -113,7 +113,7 @@ This script will create QR codes for each room and save them in the web/qrcodes 
 
 To run tests, use the following command:
 ```text
-pytest tests/
+bash tests/run_all.sh
 ```
 This will execute the test suite and provide output regarding test results.
 
