@@ -72,7 +72,19 @@ true_gyro = np.column_stack([
 true_positions = run_simulation(true_accel, true_gyro, fs)
 
 # Draw the trajectories
-# plot_trajectoires(positions, true_positions)
+# plot_trajectories(positions, true_positions)
+plt.figure(figsize=(8, 6))
+plt.plot(positions[:, 0], positions[:, 1], 'bo-', label='Estimated PDR Trajectory')
+plt.plot(true_positions[:, 0], true_positions[:, 1], 'ro-', label='True Movement')
+plt.plot(positions[0, 0], positions[0, 1], 'bs', markersize=8, label='Start')
+plt.plot(positions[-1, 0], positions[-1, 1], 'go', markersize=8, label='End')
+plt.title('PDR Trajectory vs True Movement')
+plt.xlabel('Position X (m)')
+plt.ylabel('Position Y (m)')
+plt.axis('equal')
+plt.legend()
+plt.grid(True)
+plt.show()
 
 # Calculate RMSE
 rmse = np.sqrt(np.mean((positions[1:] - true_positions[1:])**2, axis=0))

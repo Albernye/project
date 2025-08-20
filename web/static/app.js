@@ -25,13 +25,56 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ——————————————————————————————
-  // 2. ROOM DETECTION AND URL MANAGEMENT
+  // 2. COORDINATE TRANSFORMATION FUNCTIONS
   // ——————————————————————————————
 
   /**
-   * Get the current room from URL parameters or map element data
-   * @returns {string} Room identifier
+   * Convert GPS coordinates to pixel coordinates for the building map
+   * @param {number} lon - Longitude (GPS)
+   * @param {number} lat - Latitude (GPS)
+   * @returns {array} [x, y] pixel coordinates
    */
+  function gpsToPixel(lon, lat) {
+    // Coordonnées de référence basées sur votre corridor_graph.json
+    const GPS_BOUNDS = {
+      minLon: 2.175568,  // Room 2-01
+      maxLon: 2.194291,  // Room 2-13
+      minLat: 41.406,    // Corridor level
+      maxLat: 41.406369  // Room level
+    };
+
+    // Transformation proportionnelle vers les pixels
+    const x = ((lon - GPS_BOUNDS.minLon) / (GPS_BOUNDS.maxLon - GPS_BOUNDS.minLon)) * MAP_CONFIG.IMAGE_WIDTH;
+    const y = MAP_CONFIG.IMAGE_HEIGHT - ((lat - GPS_BOUNDS.minLat) / (GPS_BOUNDS.maxLat - GPS_BOUNDS.minLat)) * MAP_CONFIG.IMAGE_HEIGHT;
+    
+    return [x, y];
+  }
+
+  /**
+   * Convert pixel coordinates to Leaflet LatLng for Simple CRS
+   * @param {number} x - X pixel coordinate
+   * @param {number} y - Y pixel coordinate
+   * @returns {L.LatLng} Leaflet coordinate
+   */
+  function pixelToLeaflet(x, y) {
+    return map.unproject([x, y], 0);
+  }
+
+  /**
+   * Convert GPS coordinates directly to Leaflet coordinates
+   * @param {number} lon - GPS longitude
+   * @param {number} lat - GPS latitude
+   * @returns {L.LatLng} Leaflet coordinate
+   */
+  function gpsToLeaflet(lon, lat) {
+    const [x, y] = gpsToPixel(lon, lat);
+    return pixelToLeaflet(x, y);
+  }
+
+  // ——————————————————————————————
+  // 3. ROOM DETECTION AND URL MANAGEMENT
+  // ——————————————————————————————
+
   function getRoomFromURL() {
     const urlParams = new URLSearchParams(window.location.search);
     const room = urlParams.get('room');
@@ -58,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
       currentRoom = newRoom;
       lastPolledRoom = newRoom;
 
-      // Écriture d'un événement QR côté serveur
+      // Writing a new room change event
       fetch('/change_room', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -67,7 +110,6 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(res => res.json())
       .then(data => {
         console.log('✅ QR event written for room:', data.room);
-        // Clear existing polling interval
         if (pollingInterval) {
           clearInterval(pollingInterval);
         }
@@ -84,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 3. DIAGNOSTIC AND VALIDATION
+  // 4. DIAGNOSTIC AND VALIDATION
   // ——————————————————————————————
 
   /**
@@ -126,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 4. MAP INITIALIZATION
+  // 5. MAP INITIALIZATION
   // ——————————————————————————————
 
   /**
@@ -137,7 +179,6 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       console.log("Creating Leaflet map instance...");
 
-      // Create map with Simple CRS for pixel-based coordinates
       map = L.map('map', {
         crs: L.CRS.Simple,
         minZoom: MAP_CONFIG.MIN_ZOOM,
@@ -191,8 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function initializeUserMarker() {
     console.log("📌 Adding user position marker...");
     
-    // Default position (will be updated by position polling)
-    userMarker = L.marker([41.406368, 2.175568], {
+    // Position par défaut convertie en coordonnées Leaflet
+    const defaultLeafletPos = gpsToLeaflet(2.175568, 41.406368);
+    
+    userMarker = L.marker(defaultLeafletPos, {
       title: 'Your current position',
       draggable: false
     }).addTo(map);
@@ -201,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 5. UTILITY FUNCTIONS
+  // 6. UTILITY FUNCTIONS
   // ——————————————————————————————
 
   /**
@@ -254,7 +297,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 6. POSITION TRACKING
+  // 7. POSITION TRACKING
   // ——————————————————————————————
 
   /**
@@ -274,25 +317,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await response.json();
       const { position, timestamp, walked_distance } = data;
-      const [lng, lat] = position;
+      
+      // Conversion des coordonnées GPS en coordonnées Leaflet
+      const [lon, lat] = position;
+      const leafletPos = gpsToLeaflet(lon, lat);
 
       const currentLatLng = userMarker.getLatLng();
-      const newLatLng = L.latLng(lat, lng);
 
-      // Smooth animation if requested
       if (animate) {
-        animateMarkerMovement(currentLatLng, newLatLng);
+        animateMarkerMovement(currentLatLng, leafletPos);
       } else {
-        userMarker.setLatLng(newLatLng);
+        userMarker.setLatLng(leafletPos);
       }
 
-      // Pan to marker only if it's outside the current view
-      if (!map.getBounds().contains(newLatLng)) {
-        map.panTo(newLatLng, { animate: true });
+      if (!map.getBounds().contains(leafletPos)) {
+        map.panTo(leafletPos, { animate: true });
       }
 
-      // Update UI elements with new data
-      updateUIElements(lat, lng, timestamp, walked_distance);
+      updateUIElements(lat, lon, timestamp, walked_distance);
 
     } catch (error) {
       console.error("❌ Position update error:", error);
@@ -353,7 +395,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 7. QR CODE SCANNING
+  // 8. QR CODE SCANNING
   // ——————————————————————————————
 
   /**
@@ -378,17 +420,14 @@ document.addEventListener('DOMContentLoaded', () => {
       console.log("✅ QR scan successful:", data);
       showStatus(`QR scanned: Room ${data.room}`, "#4CAF50");
 
-      // Update current room and position
       currentRoom = data.room;
-      await updatePosition(false); // Immediate update without animation
+      await updatePosition(false);
 
-      // Restart polling with new room context
       if (pollingInterval) {
         clearInterval(pollingInterval);
       }
       pollingInterval = setInterval(() => updatePosition(true), MAP_CONFIG.UPDATE_INTERVAL);
 
-      // Automatically start sensor data collection
       collectSensorData();
 
     } catch (error) {
@@ -397,11 +436,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Make scanQR available globally for QR code integration
   window.scanQR = scanQR;
 
   // ——————————————————————————————
-  // 8. ROUTE CALCULATION
+  // 9. ROUTE CALCULATION - CORRECTED
   // ——————————————————————————————
 
   /**
@@ -426,24 +464,54 @@ document.addEventListener('DOMContentLoaded', () => {
         map.removeLayer(routeLayer);
       }
 
+      // Convert GeoJSON coordinates from GPS to Leaflet coordinates
+      const convertedFeatures = geojson.features.map(feature => {
+        const coordinates = feature.geometry.coordinates.map(coord => {
+          const [gpsLon, gpsLat] = coord;
+          const leafletPos = gpsToLeaflet(gpsLon, gpsLat);
+          return [leafletPos.lng, leafletPos.lat];
+        });
+
+        return {
+          ...feature,
+          geometry: {
+            ...feature.geometry,
+            coordinates: coordinates
+          }
+        };
+      });
+
+      const convertedGeoJSON = {
+        ...geojson,
+        features: convertedFeatures
+      };
+
       // Add new route with visible styling
-      routeLayer = L.geoJSON(geojson, {
+      routeLayer = L.geoJSON(convertedGeoJSON, {
         style: {
-          color: '#FF0000',     // Red for high visibility
-          weight: 6,            // Thick line
-          opacity: 1.0,         // Full opacity
-          dashArray: null       // Solid line
+          color: '#FF0000',
+          weight: 6,
+          opacity: 1.0,
+          dashArray: null
+        },
+        onEachFeature: function(feature, layer) {
+          if (feature.properties && feature.properties.segment_distance) {
+            layer.bindTooltip(`${feature.properties.segment_distance.toFixed(1)}m`, 
+              {permanent: false, direction: 'center'});
+          }
         }
       }).addTo(map);
-
-      // Ensure route appears above floor plan
+      
+      // Bring to front to ensure visibility
       routeLayer.bringToFront();
 
-      // Center view on route without changing zoom
-      const routeCenter = routeLayer.getBounds().getCenter();
-      map.setView(routeCenter, map.getZoom());
+      // Center view on route
+      const routeBounds = routeLayer.getBounds();
+      if (routeBounds.isValid()) {
+        map.fitBounds(routeBounds, { padding: [20, 20] });
+      }
       
-      showStatus(`Route calculated: ${geojson.total_distance?.toFixed(1)}m`, "#4CAF50");
+      showStatus(`Route calculated: ${geojson.total_distance?.toFixed(1) || '0.0'}m`, "#4CAF50");
       console.log("✅ Route displayed successfully");
 
     } catch (error) {
@@ -454,7 +522,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 9. SENSOR DATA COLLECTION
+  // 10. SENSOR DATA COLLECTION
   // ——————————————————————————————
 
   /**
@@ -641,7 +709,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 10. BUTTON EVENT HANDLERS
+  // 11. BUTTON EVENT HANDLERS
   // ——————————————————————————————
 
   /**
@@ -675,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } finally {
         // Re-enable button
         goBtn.disabled = false;
-        goBtn.textContent = 'Calculate Route';
+        goBtn.textContent = 'Route';
       }
     });
 
@@ -721,7 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
         handleError(error);
       } finally {
         recalibrateBtn.disabled = false;
-        recalibrateBtn.textContent = 'Recalibrate Position';
+        recalibrateBtn.textContent = 'Recalibrate';
       }
     });
 
@@ -729,7 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 11. EVENT LISTENERS AND RESPONSIVE HANDLING
+  // 12. EVENT LISTENERS AND RESPONSIVE HANDLING
   // ——————————————————————————————
 
   /**
@@ -797,7 +865,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 12. APPLICATION STARTUP
+  // 13. APPLICATION STARTUP
   // ——————————————————————————————
 
   /**
@@ -864,9 +932,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ——————————————————————————————
-  // 13. START APPLICATION
+  // 14. START APPLICATION
   // ——————————————————————————————
 
-  // Initialize the application
   initializeApp();
 });

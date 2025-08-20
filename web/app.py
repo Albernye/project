@@ -105,12 +105,14 @@ def get_node_position(node_id, corridor_data):
         corridor_data (dict): Corridor graph data
         
     Returns:
-        list: [x, y] coordinates or None if not found
+        list: [longitude, latitude] coordinates or None if not found
     """
     # If it's a room (starts with floor number)
     if node_id.startswith('2-'):
         try:
-            return get_room_position(node_id)
+            position = get_room_position(node_id)
+            # get_room_position returns [lon, lat, floor], we only need [lon, lat]
+            return position[:2]
         except Exception as e:
             logger.warning(f"Position not found for room {node_id}: {e}")
             return None
@@ -120,14 +122,14 @@ def get_node_position(node_id, corridor_data):
         for corridor_name, corridor_info in corridor_data['corridor_structure'].items():
             for point_name, x, y in corridor_info.get('points', []):
                 if point_name == node_id:
-                    return [x, y]
+                    return [x, y]  # Return [longitude, latitude]
 
     logger.warning(f"Position not found for node {node_id}")
     return None
 
-# Load corridor data and initialize pathfinder
+# Load corridor data and initialize pathfinder with scale factor
 corridor_data = load_corridor_data()
-pathfinder = PathFinder(corridor_data['graph']) if corridor_data else None
+pathfinder = PathFinder(corridor_data['graph'], scale_factor=1000.0) if corridor_data else None
 
 @app.route('/position')
 def get_position():
@@ -252,8 +254,10 @@ def get_route():
         if not result:
             return jsonify({"error": "Route not found"}), 404
 
-        # Convert path to GeoJSON format
+        # Convert path to GeoJSON format with correct coordinate handling
         features = []
+        segment_distances = []
+        
         for i in range(len(result['path']) - 1):
             current_node = result['path'][i]
             next_node = result['path'][i + 1]
@@ -263,31 +267,116 @@ def get_route():
             end_pos = get_node_position(next_node, corridor_data)
             
             if start_pos and end_pos:
+                # Calculate segment distance in meters
+                import math
+                segment_distance = math.sqrt(
+                    (end_pos[0] - start_pos[0])**2 + 
+                    (end_pos[1] - start_pos[1])**2
+                ) * pathfinder.scale_factor
+                
+                segment_distances.append(segment_distance)
+                
+                # Create GeoJSON LineString feature
+                # IMPORTANT: Coordinates must be in [longitude, latitude] format for GeoJSON
                 features.append({
                     "type": "Feature",
                     "geometry": {
                         "type": "LineString",
                         "coordinates": [
-                            [start_pos[0], start_pos[1]],
-                            [end_pos[0], end_pos[1]]
+                            [start_pos[0], start_pos[1]],  # [lon, lat] format
+                            [end_pos[0], end_pos[1]]       # [lon, lat] format
                         ]
                     },
                     "properties": {
                         "from": current_node,
                         "to": next_node,
-                        "segment_distance": result.get('segment_distances', [0])[i] if i < len(result.get('segment_distances', [])) else 0
+                        "segment_distance": segment_distance,
+                        "segment_index": i
                     }
                 })
         
-        return jsonify({
+        # Calculate total distance
+        total_distance = sum(segment_distances)
+        
+        # Create GeoJSON FeatureCollection
+        geojson_response = {
             "type": "FeatureCollection",
             "features": features,
-            "total_distance": result['distance'],
-            "path": result['path']
-        })
+            "properties": {
+                "total_distance": total_distance,
+                "segment_count": len(features),
+                "start_room": start_node,
+                "end_room": end_node
+            },
+            "total_distance": total_distance,  # Keep for backward compatibility
+            "path": result['path'],
+            "segment_distances": segment_distances
+        }
+        
+        logger.info(f"Route calculated: {start_node} -> {end_node}, distance: {total_distance:.2f}m")
+        return jsonify(geojson_response)
         
     except Exception as e:
         logger.exception("Error calculating route")
+        return jsonify({"error": str(e)}), 500
+    
+@app.route('/change_room', methods=['POST'])
+def change_room():
+    """
+    Handle room change events from URL changes.
+    This is called when the user navigates to a different room URL.
+    
+    Request Body (JSON):
+        room (str): New room identifier
+        
+    Returns:
+        JSON: Confirmation of room change
+    """
+    global qr_reset_pending
+    
+    try:
+        data = request.get_json()
+        if not data or 'room' not in data:
+            return jsonify({"error": "Missing room parameter"}), 400
+
+        room = str(data['room'])
+        normalized_room = normalize_room_id(room)
+        
+        if not normalized_room:
+            return jsonify({"error": f"Invalid room format: {room}"}), 400
+
+        logger.info(f"Room changed to: {normalized_room}")
+        
+        # Get room coordinates for QR reset
+        try:
+            lon, lat, floor = get_room_position(normalized_room)
+            
+            # Create QR scanning event for room change
+            qr_event = {
+                "type": "qr",
+                "room": normalized_room,
+                "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+                "position": [float(lon), float(lat)]
+            }
+            
+            # Flag QR reset for next position polling
+            qr_reset_pending = True
+            
+            # Save QR event
+            write_json_safe([qr_event], cfg.QR_EVENTS_FILE)
+            logger.info(f"QR event written for room change: {qr_event}")
+            
+        except Exception as e:
+            logger.warning(f"Could not get position for room {normalized_room}: {e}")
+        
+        return jsonify({
+            "success": True,
+            "room": normalized_room,
+            "message": f"Room changed to {normalized_room}"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error in /change_room: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/')

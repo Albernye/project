@@ -14,11 +14,11 @@ def simulate_qr_sequence(room_list, interval_s=1.0, temp_json="simulation/qr_sim
     events = []
     t0 = time.time()
     for i, room in enumerate(room_list):
-        lon, lat = get_room_position(room)
+        lon, lat, z = get_room_position(room)
         events.append({
             "room": room,
             "timestamp": (t0 + i*interval_s),
-            "position": [lon, lat]
+            "position": [lon, lat, z],
         })
     write_json_safe(events, temp_json)
     return Path(temp_json)
@@ -27,7 +27,7 @@ def replay_qr(temp_json):
     raw = read_json_safe(temp_json)
     local_pts = []
     for ev in raw:
-        lon, lat = ev["position"]
+        lon, lat, z = ev["position"]
         x,y = ll_to_local(lon, lat)
         local_pts.append((x,y))
     return np.array(local_pts)
