@@ -39,7 +39,7 @@ def run_pdr_simulation(merged_csv_path: str):
     plt.plot(pos[:,0], pos[:,1], '-o', markersize=4, label='PDR Estimated')
     plt.plot(pos[0,0], pos[0,1], 'ks', label='Start')
     plt.plot(pos[-1,0], pos[-1,1], 'k*', label='End')
-    plt.title("PDR-Only Trajectory from merged.csv")
+    plt.title("PDR-Only Trajectory from current.csv")
     plt.xlabel("X (m)")
     plt.ylabel("Y (m)")
     plt.axis('equal')
@@ -48,4 +48,4 @@ def run_pdr_simulation(merged_csv_path: str):
     plt.show()
 
 if __name__ == "__main__":
-    run_pdr_simulation("data/merged.csv")
+    run_pdr_simulation("data/pdr_traces/current.csv")

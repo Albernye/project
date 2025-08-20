@@ -12,7 +12,7 @@ from algorithms.fingerprint import set_origin, ll_to_local
 from services.utils import read_json_safe
 from config import (
     DEFAULT_POSXY, SIM_DURATION, SIM_FS, QR_EVENTS_FILE,
-    PDR_TRACE, FP_CURRENT, ROOM_POS_CSV, SIMULATED_IMU
+    PDR_TRACE, FP_CURRENT, ROOM_POS_CSV, USE_SIMULATED_IMU
 )
 from pathlib import Path
 import re
@@ -240,7 +240,7 @@ def run_combined_simple(merged_csv_path: str, qr_json_path: str):
 
 if __name__ == "__main__":
     try:
-        result = run_combined_simple("data/merged.csv", str(QR_EVENTS_FILE))
+        result = run_combined_simple("data/pdr_traces/current.csv", str(QR_EVENTS_FILE))
         print("✅ Simulation completed successfully!")
     except Exception as e:
         print(f"❌ Error running simulation: {e}")

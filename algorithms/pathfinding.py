@@ -11,15 +11,16 @@ from typing import Dict, List, Tuple, Optional
 class PathFinder:
     """Class for pathfinding algorithms."""
     
-    def __init__(self, graph: Dict[str, List[Tuple[str, float]]]):
+    def __init__(self, graph: Dict[str, List[Tuple[str, float]]], scale_factor: float = 1000.0):
         """
-        Initialize the PathFinder with a graph.
+        Initialize the PathFinder with a graph and scale factor.
         
         Args:
-            graph: Dictionary representing the graph
-                   {node: [(neighbor, weight), ...]}
+            graph: Dictionary representing the graph {node: [(neighbor, weight), ...]}
+            scale_factor: Conversion factor from pixel distance to meters (default: 0.1 m/pixel)
         """
         self.graph = graph
+        self.scale_factor = scale_factor
     
     def dijkstra(self, start: str, end: str) -> Tuple[float, List[str]]:
         """
@@ -64,7 +65,7 @@ class PathFinder:
                 if neighbor in visited:
                     continue
                 
-                distance = current_distance + weight
+                distance = current_distance + (weight * self.scale_factor)
                 if distance < distances[neighbor]:
                     distances[neighbor] = distance
                     predecessors[neighbor] = current_node
@@ -142,7 +143,7 @@ class PathFinder:
                 continue
             
             for neighbor, weight in self.graph[current_node]:
-                distance = current_distance + weight
+                distance = current_distance + (weight * self.scale_factor)
                 if distance < distances[neighbor] and distance <= max_distance:
                     distances[neighbor] = distance
                     predecessors[neighbor] = current_node
@@ -176,8 +177,9 @@ def load_pathfinder_from_json(json_path: str) -> PathFinder:
     """
     with open(json_path, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    
-    return PathFinder(data['graph'])
+
+    # Calculate scale factor based on map dimensions
+    return PathFinder(data['graph'], scale_factor=1000.0)
 
 if __name__ == "__main__":
     import os

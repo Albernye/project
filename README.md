@@ -8,7 +8,6 @@ description: QR-code based hybrid indoor positioning using PDR and Wi-Fi fingerp
 This project was developed during my engineering internship at the **Universitat Oberta de Catalunya**, under the supervision of **Dr. Pérez-Navarro**.  
 It aims to provide a lightweight, mobile-friendly **indoor navigation system** based on **QR codes**, **IMU sensors (PDR)**, and **Wi‑Fi fingerprinting**.
 
-<img src="diag.png" alt="System Architecture" style="max-width: 100%;">
 
 ## Project Goals
 
@@ -113,7 +112,7 @@ This script will create QR codes for each room and save them in the web/qrcodes 
 
 To run tests, use the following command:
 ```text
-pytest tests/
+bash tests/run_all.sh
 ```
 This will execute the test suite and provide output regarding test results.
 
