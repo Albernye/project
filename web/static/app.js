@@ -35,20 +35,26 @@ document.addEventListener('DOMContentLoaded', () => {
    * @returns {array} [x, y] pixel coordinates
    */
   function gpsToPixel(lon, lat) {
-    // Coordonnées de référence basées sur votre corridor_graph.json
     const GPS_BOUNDS = {
-      minLon: 2.175568,  // Room 2-01
-      maxLon: 2.194291,  // Room 2-13
-      minLat: 41.406,    // Corridor level
-      maxLat: 41.406369  // Room level
+        minLon: 2.175568,  // Room 2-01
+        maxLon: 2.194291,  // Room 2-13  
+        minLat: 41.406315, // Room 2-19
+        maxLat: 41.406369  // Rooms 2-06, 2-07, etc.
     };
-
-    // Transformation proportionnelle vers les pixels
-    const x = ((lon - GPS_BOUNDS.minLon) / (GPS_BOUNDS.maxLon - GPS_BOUNDS.minLon)) * MAP_CONFIG.IMAGE_WIDTH;
-    const y = MAP_CONFIG.IMAGE_HEIGHT - ((lat - GPS_BOUNDS.minLat) / (GPS_BOUNDS.maxLat - GPS_BOUNDS.minLat)) * MAP_CONFIG.IMAGE_HEIGHT;
     
+    const x_raw = MAP_CONFIG.IMAGE_WIDTH - ((lon - GPS_BOUNDS.minLon) / (GPS_BOUNDS.maxLon - GPS_BOUNDS.minLon)) * MAP_CONFIG.IMAGE_WIDTH;
+    const y_raw = ((lat - GPS_BOUNDS.minLat) / (GPS_BOUNDS.maxLat - GPS_BOUNDS.minLat)) * MAP_CONFIG.IMAGE_HEIGHT;
+
+    // OFFSET and SCALE :
+    const X_OFFSET = -150; // Offset in pixels (to adjust)
+    const X_SCALE_FACTOR = 1; // Reduce the horizontal scale (to adjust)
+    const Y_SCALE_FACTOR = 0.1; // Reduce the vertical scale (to adjust)
+    const Y_OFFSET = 500;       // Offset in pixels (to adjust)
+
+    const x = x_raw * X_SCALE_FACTOR + X_OFFSET;
+    const y = y_raw * Y_SCALE_FACTOR + Y_OFFSET;
     return [x, y];
-  }
+}
 
   /**
    * Convert pixel coordinates to Leaflet LatLng for Simple CRS
@@ -439,7 +445,7 @@ document.addEventListener('DOMContentLoaded', () => {
   window.scanQR = scanQR;
 
   // ——————————————————————————————
-  // 9. ROUTE CALCULATION - CORRECTED
+  // 9. ROUTE CALCULATION 
   // ——————————————————————————————
 
   /**
