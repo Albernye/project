@@ -1,7 +1,66 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
-*.ipynb_checkpoints
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.Python
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+
+# Packaging
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Logs and databases
+*.log
+*.sqlite
+*.sql
+
+# Environment files
 .env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+docker-compose.override.yml
+
+# Local development
+tmp/
+temp/
+
+# UV package manager (keep pyproject.toml and uv.lock)
+requirements.txt
+
+# Tests and coverage
+.coverage
+htmlcov/
 .pytest_cache/
-*.pytest_cache/
+.tox/
+
+# Jupyter
+*.ipynb_checkpoints

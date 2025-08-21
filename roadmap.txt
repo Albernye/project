@@ -23,7 +23,6 @@ PHASE E: Web UI & Map Display (In Progress)
 [x] Room change detection and immediate marker update
 [x] QR event logging and integration with Flask backend
 [x] Simulate and visualize results (API route tests, fusion logic)
-[ ] Display QR codes in UI
 
 PHASE F: Deployment
 [ ] Dockerize backend
