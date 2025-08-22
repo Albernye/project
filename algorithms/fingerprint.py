@@ -123,6 +123,16 @@ def ll_to_local(lon: float, lat: float) -> tuple:
 
     return x, y
 
+def local_to_ll(x: float, y: float) -> tuple:
+    """
+    Convert local meter coordinates back to longitude/latitude.
+    """
+    R = 6371000  # Earth radius
+    lon = math.degrees(x / (R * math.cos(math.radians(ORIGIN_LAT)))) + ORIGIN_LON
+    lat = math.degrees(y / R) + ORIGIN_LAT
+    return lon, lat
+
+
 def fingerprint_with_local_coords(knntrainfile, FPfile, kP, kZ, R):
     """
     Execute Louis Royet's fingerprint algorithm and return results in local coordinates.

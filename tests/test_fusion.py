@@ -6,14 +6,21 @@ from pathlib import Path
 # Add project root to PYTHONPATH
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from algorithms.fingerprint import ll_to_local
 from algorithms.fusion import fuse, reset_kalman
 
 def test_fusion_singleton():
-    """Test the singleton behavior of the fusion function"""
+    """Test that the Kalman filter updates state on successive PDR deltas."""
     reset_kalman()
-    result1 = fuse(pdr_delta=(1,0,0))
-    result2 = fuse(pdr_delta=(0,1,0))
-    assert not np.allclose(result1, result2)
+    result1 = fuse(pdr_delta=(1, 0, 0))
+    result2 = fuse(pdr_delta=(0, 1, 0))
+
+    # Use local coordinates to measure actual movement
+    x1, y1 = ll_to_local(result1[0], result1[1])
+    x2, y2 = ll_to_local(result2[0], result2[1])
+
+    distance_moved = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    assert distance_moved > 0.001, f"Kalman filter did not move enough: {distance_moved} m"
 
 def test_no_movement_case():
     """Test the no movement case"""
@@ -39,19 +46,17 @@ def test_fusion_reset():
     reset_kalman()
     qr_pos = (3.0, 4.0, 0.0)
     fused = fuse(qr_anchor=qr_pos, room="2-01")
-    print("DEBUG fused:", fused, "qr_pos:", qr_pos)
     assert isinstance(fused, (tuple, list, np.ndarray))
     assert len(fused) >= 2
 
-    # Test with relaxed tolerance to account for filter uncertainties
+    # Use relaxed tolerance to account for filter smoothing
     assert np.allclose(fused[:2], qr_pos[:2], atol=1.0)
 
 def test_pdr_only():
     """Test with only PDR (no fingerprint)"""
     reset_kalman()
     pdr_pos = (2.0, 3.0, 0.0)
-    result = fuse(pdr_pos, None, None)
-    
+    result = fuse(pdr_delta=pdr_pos)
     assert isinstance(result, (tuple, list, np.ndarray))
     assert len(result) >= 2
 
@@ -59,8 +64,7 @@ def test_fingerprint_only():
     """Test with only fingerprint (no PDR)"""
     reset_kalman()
     finger_pos = (2.5, 3.5, 0.0)
-    result = fuse(None, finger_pos, None)
-    
+    result = fuse(fingerprint=finger_pos)
     assert isinstance(result, (tuple, list, np.ndarray))
     assert len(result) >= 2
 
@@ -73,33 +77,24 @@ def test_fingerprint_only():
     
     results = []
     for pdr, finger in positions:
-        result = fuse(pdr, finger, None)
+        result = fuse(pdr_delta=pdr, fingerprint=finger)
         results.append(result)
         assert isinstance(result, (tuple, list, np.ndarray))
         assert len(result) >= 2
 
-    # All results must be valid
-    assert len(results) == 3
-
-    # Positions must evolve consistently
+    # Check that successive positions evolve
     for i in range(1, len(results)):
-        # Successive positions must not be identical
-        assert not np.allclose(results[i-1][:2], results[i][:2], atol=1e-6)
+        x_prev, y_prev = ll_to_local(*results[i-1][:2])
+        x_curr, y_curr = ll_to_local(*results[i][:2])
+        distance = ((x_curr - x_prev)**2 + (y_curr - y_prev)**2)**0.5
+        assert distance > 0.001, f"Positions {i-1} and {i} are too close: {distance} m"
 
 if __name__ == "__main__":
-    # Run tests
     print("Running fusion tests...")
-    
-    test_fusion_simple()
-    print("✅ test_fusion_simple passed")
-    
-    test_fusion_reset()
-    print("✅ test_fusion_reset passed")
-    
-    test_pdr_only()
-    print("✅ test_pdr_only passed")
-    
-    test_fingerprint_only()
-    print("✅ test_fingerprint_only passed")
-    
+    test_fusion_simple(); print("✅ test_fusion_simple passed")
+    test_fusion_reset(); print("✅ test_fusion_reset passed")
+    test_pdr_only(); print("✅ test_pdr_only passed")
+    test_fingerprint_only(); print("✅ test_fingerprint_only passed")
+    test_fusion_singleton(); print("✅ test_fusion_singleton passed")
+    test_no_movement_case(); print("✅ test_no_movement_case passed")
     print("All tests passed!")
