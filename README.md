@@ -79,7 +79,7 @@ project/
 
 Ensure you have Python installed on your system. The project uses uv for dependency management, which is part of the Astral project. You can install uv using the following command:
 ```text
-pip install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 ## Installation
 
@@ -100,21 +100,36 @@ Set up environment variables by copying .env.example to .env and adjusting as ne
 
 ### Running the Server
 To start the Flask server, execute the following command from the root directory of the project:
+```text
 python web/app.py
+```
 This will start the server, and the application will be accessible at http://localhost:5000.
 
 ### Generating QR Codes
-You can generate QR codes for rooms using the script located in the scripts/qr_generator directory. Run:
+You can generate QR codes for rooms using the script located in the scripts/qr_generator directory. 
+Run:
+```text
 python scripts/qr_generator/generate_qr.py
+```
 This script will create QR codes for each room and save them in the web/qrcodes directory.
 
 ### Testing
 
-To run tests, use the following command:
+To run tests, use the following command: 
 ```text
 bash tests/run_all.sh
 ```
 This will execute the test suite and provide output regarding test results.
+
+### Mobile Testing with Ngrok
+
+To test the application on a mobile device:
+
+1. Make sure your computer (running the Flask server) and your mobile device are connected to the **same network**.
+2. Install [ngrok](https://ngrok.com/).
+3. Run the following command to expose your local server:
+   ```bash
+   ngrok http 5000
 
 ## Contributing
 
