@@ -87,5 +87,5 @@
 - Graph visualization helps confirm **feasible paths** and **room connectivity**.  
 - Can be integrated with PDR/QR trajectories for **combined navigation visualization**. 
 
-**Conclusion**:  
+## Conclusion:  
 QR resets effectively reduce drift and improve accuracy in indoor navigation via **Pedestrian-Dead-reckoning**. Graph visualization confirms corridor connectivity and enables accurate path planning (**djikstra**) between rooms like `2-10` and `2-04`.

@@ -47,6 +47,10 @@ project/
 │   ├── recordings/        # Sensor data recordings
 │   └── simulation_result.png
 │
+├── results/ 
+│   ├── plot/              # Generated graphs, plots, and visualizations from simulations
+│   └── notes.md           # Notes, observations, or summaries related to simulation results
+│
 ├── scripts/               # Various utility scripts
 │   ├── digitize_plan.py   # Plan digitization
 │   └── ...                # Other utility scripts
@@ -121,6 +125,14 @@ bash tests/run_all.sh
 ```
 This will execute the test suite and provide output regarding test results.
 
+### Simulating
+
+To run simulation, use the following command: 
+```text
+PYTHONPATH=. python archives/simulation/<simu.py>
+```
+This will execute the simulation and provide output regarding the simulation results.
+
 ### Mobile Testing with Ngrok
 
 To test the application on a mobile device:
@@ -142,12 +154,12 @@ Submit a pull request detailing what your changes do and why they are necessary.
 
 ## Contact
 
-For questions or feedback, please reach out to [albernye@gmail.com].
+For questions or feedback, please reach out to [albernye@gmail.com](mailto:albernye@gmail.com).
 
 ## Future development goals include:
 
-Adding path visualization to destinations.
-Enhancing the Wi-Fi fingerprinting algorithm for improved accuracy.
+Enhancing path visualization to destinations.
+Adding the Wi-Fi fingerprinting data (RSSI) for improved accuracy.
 Implementing real-time updates and notifications.
 
 
