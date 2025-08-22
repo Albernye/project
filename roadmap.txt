@@ -17,7 +17,7 @@ PHASE D: Fusion & Recalibration
 [x] Automatic recalibration via Wi-Fi (if deviation >2m)
 [x] Improved sensor fusion logic in `fusion.py`
 
-PHASE E: Web UI & Map Display (In Progress)
+PHASE E: Web UI & Map Display
 [x] Start front-end work
 [x] Show position and user marker on Leaflet (real-time update)
 [x] Room change detection and immediate marker update
