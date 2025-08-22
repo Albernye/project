@@ -182,7 +182,7 @@ def load_graph_from_json(json_path):
     return data['graph'], data['room_positions'], data['corridor_structure']
 
 if __name__ == "__main__":
-    # Chemin vers le fichier CSV (plusieurs possibilités)
+    # Paths to the CSV files (multiple possibilities)
     possible_csv_paths = [
         os.path.join(os.path.dirname(__file__), '../data/room_positions.csv'),
         os.path.join(os.getcwd(), 'data/room_positions.csv'),
