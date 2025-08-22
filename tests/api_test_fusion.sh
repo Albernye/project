@@ -1,5 +1,3 @@
-#!/bin/bash
-#
 # Simulate calls to algorithms.fusion.fuse() to check PDR / QR / fingerprint flags.
 
 python3 << 'EOF'
@@ -10,8 +8,8 @@ ROOM = "201"
 
 def run_test_pdr(pdr):
     reset_kalman()
-    result = fuse(pdr_delta=pdr, qr_anchor=None, room=ROOM)
-    lat, lon, floor = result
+    result = fuse(pdr_delta=pdr, qr_anchor=None, fingerprint=None, room=ROOM)
+    lon, lat, floor = result
     sources = {
         "pdr": pdr is not None,
         "qr_reset": False
@@ -23,8 +21,8 @@ def run_test_pdr(pdr):
 
 def run_test_qr(qr):
     reset_kalman()
-    result = fuse(pdr_delta=None, qr_anchor=qr, room=ROOM)
-    lat, lon, floor = result
+    result = fuse(pdr_delta=None, qr_anchor=qr, fingerprint=None, room=ROOM)
+    lon, lat, floor = result
     sources = {
         "pdr": False,
         "qr_reset": True
@@ -38,9 +36,9 @@ print("=== Test PDR only ===")
 run_test_pdr([0.1, -0.05, 0.0])
 
 print("\n=== Test QR only ===")
-run_test_qr((41.406, 2.195, 0.0))
+run_test_qr((2.195, 41.406, 0.0))
 
 print("\n=== Test PDR + QR (reset then move) ===")
-run_test_qr((41.406, 2.195, 0.0))
+run_test_qr((2.195, 41.406, 0.0))
 run_test_pdr([0.2, 0.1, 0.0])
 EOF
