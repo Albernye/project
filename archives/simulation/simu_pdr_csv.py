@@ -5,6 +5,7 @@ PDR-Only from csv simulation
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from algorithms.fingerprint import set_origin, local_to_ll
 from algorithms.PDR import (
     step_detection_accelerometer,
     weiberg_stride_length_heading_position
@@ -35,6 +36,10 @@ def run_pdr_simulation(merged_csv_path: str):
     # 4) Plot the trajectory
     x0, y0 = 2.175568, 41.406368  
     pos = positions + np.array([x0, y0])
+    set_origin(x0, y0)
+    end_pos = local_to_ll(pos[-1, 0], pos[-1, 1])
+
+    print(f"Final estimated position: ({end_pos[0]:.6f}, {end_pos[1]:.6f})")
     plt.figure(figsize=(6,6))
     plt.plot(pos[:,0], pos[:,1], '-o', markersize=4, label='PDR Estimated')
     plt.plot(pos[0,0], pos[0,1], 'ks', label='Start')
