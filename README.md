@@ -115,7 +115,7 @@ This script will create QR codes for each room and save them in the web/qrcodes 
 
 ### Testing
 
-To run tests, use the following command:
+To run tests, use the following command: 
 ```text
 bash tests/run_all.sh
 ```
